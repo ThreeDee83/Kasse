@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b100f">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Kassenraum</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=20260705-9">
+</head>
+<body>
+  <section id="loginScreen" class="login-screen">
+    <form id="loginForm" class="login-card">
+      <span class="brand-mark">K</span>
+      <p class="eyebrow">KASSENRAUM CLOUD</p>
+      <h1>Anmelden</h1>
+      <p>Mit deinem Supabase-Benutzerkonto anmelden.</p>
+      <label>E-Mail<input id="loginEmail" type="email" autocomplete="username" required placeholder="name@beispiel.at"></label>
+      <label>Passwort<input id="loginPassword" type="password" autocomplete="current-password" required placeholder="••••••••"></label>
+      <p id="loginError" class="login-error hidden"></p>
+      <button type="submit" class="primary-button">Anmelden</button>
+      <button type="button" id="localModeButton" class="secondary-button">Lokalen Testmodus verwenden</button>
+      <small id="configHint" class="config-hint hidden">Supabase ist noch nicht konfiguriert. Trage URL und Anon-Key in config.js ein.</small>
+    </form>
+  </section>
+
+  <div id="appShell" class="app-shell hidden">
+    <header class="topbar">
+      <button class="brand" id="brandHome" aria-label="Zur Kasse">
+        <span class="brand-mark">K</span>
+        <span>
+          <strong>Kassenraum</strong>
+          <small>Verkaufspunkt</small>
+        </span>
+      </button>
+      <div class="topbar-actions">
+        <label class="location-picker">
+          <span>Standort</span>
+          <select id="locationSelector" aria-label="Standort auswählen"></select>
+        </label>
+        <div class="date-chip" id="dateChip"></div>
+        <button class="report-button" id="reportsButton" aria-label="Abrechnung öffnen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V2"/></svg>
+          <span>Abrechnung</span>
+        </button>
+        <button class="icon-button" id="settingsButton" aria-label="Einstellungen öffnen" title="Einstellungen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .63 1.7 1.7 0 0 0-.38 1.08V21h-4v-.09A1.7 1.7 0 0 0 8.56 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.2 15a1.7 1.7 0 0 0-.63-1 1.7 1.7 0 0 0-1.08-.38H2v-4h.49A1.7 1.7 0 0 0 4 8.56a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.37 4.2a1.7 1.7 0 0 0 1-.63A1.7 1.7 0 0 0 9.75 2.5V2h4v.49A1.7 1.7 0 0 0 14.81 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 .63 1 1.7 1.7 0 0 0 1.08.38H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="posView" class="pos-layout">
+      <aside class="category-panel">
+        <div class="section-heading">
+          <span>Kategorien</span>
+          <small id="categoryCount"></small>
+        </div>
+        <nav id="categoryNav" class="category-nav" aria-label="Artikelkategorien"></nav>
+      </aside>
+
+      <section class="product-section">
+        <div class="product-header">
+          <div>
+            <p class="eyebrow">ARTIKELAUSWAHL</p>
+            <h1 id="productTitle">Alle Artikel</h1>
+          </div>
+          <label class="search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+            <input id="productSearch" type="search" placeholder="Artikel suchen …" autocomplete="off">
+          </label>
+        </div>
+        <div id="productGrid" class="product-grid"></div>
+        <div id="emptyProducts" class="empty-state hidden">
+          <div class="empty-icon">+</div>
+          <h2>Noch keine Artikel</h2>
+          <p>Lege im Einstellungsbereich den ersten Artikel an.</p>
+          <button class="secondary-button open-settings">Artikel anlegen</button>
+        </div>
+      </section>
+
+      <aside class="cart-panel">
+        <div class="cart-header">
+          <div>
+            <p class="eyebrow">AKTUELLER BON</p>
+            <h2>Bestellung</h2>
+          </div>
+          <button id="clearCartButton" class="text-button" disabled>Leeren</button>
+        </div>
+        <div id="cartItems" class="cart-items"></div>
+        <div id="emptyCart" class="empty-cart">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h2l2 11h9l2-8H7"/><circle cx="10" cy="19" r="1"/><circle cx="17" cy="19" r="1"/></svg>
+          <p>Der Bon ist noch leer</p>
+          <small>Tippe auf einen Artikel, um ihn hinzuzufügen.</small>
+        </div>
+        <div class="cart-footer">
+          <div class="summary-row muted"><span>Zwischensumme</span><span id="subtotal">0,00 €</span></div>
+          <div class="summary-row total"><span>Gesamt</span><span id="total">0,00 €</span></div>
+          <button id="checkoutButton" class="checkout-button" disabled>
+            <span>Bezahlen</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </aside>
+    </main>
+
+    <main id="settingsView" class="settings-view hidden">
+      <div class="settings-topline">
+        <button id="backToPos" class="back-button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          Zurück zur Kasse
+        </button>
+        <div>
+          <p class="eyebrow">VERWALTUNG</p>
+          <h1>Einstellungen</h1>
+          <p>Kategorien und Artikel verwalten.</p>
+        </div>
+      </div>
+
+      <div class="settings-tabs" role="tablist">
+        <button class="settings-tab active" data-tab="categories">Kategorien <span id="settingsCategoryCount"></span></button>
+        <button class="settings-tab" data-tab="products">Artikel <span id="settingsProductCount"></span></button>
+        <button class="settings-tab" data-tab="general">Administration</button>
+      </div>
+
+      <section id="categoriesTab" class="settings-content">
+        <div class="settings-list-header">
+          <div><h2>Deine Kategorien</h2><p>Ordne dein Sortiment mit Namen und Farben.</p></div>
+          <button class="primary-button" id="addCategoryButton">+ Kategorie anlegen</button>
+        </div>
+        <div id="categorySettingsList" class="settings-list"></div>
+      </section>
+
+      <section id="productsTab" class="settings-content hidden">
+        <div class="settings-list-header">
+          <div><h2>Deine Artikel</h2><p>Pflege Bezeichnung, Preis und Zuordnung.</p></div>
+          <button class="primary-button" id="addProductButton">+ Artikel anlegen</button>
+        </div>
+        <div id="productSettingsList" class="settings-list"></div>
+      </section>
+
+      <section id="generalTab" class="settings-content hidden">
+        <div class="admin-grid">
+          <article class="admin-card">
+            <p class="eyebrow">DARSTELLUNG</p><h2>Farbschema</h2>
+            <label>Modus<select id="themeSelect"><option value="dark">Dark Mode</option><option value="light">Light Mode</option></select></label>
+          </article>
+          <article class="admin-card">
+            <p class="eyebrow">ABRECHNUNG</p><h2>E-Mail</h2>
+            <label>Abrechnungs-E-Mail<input id="billingEmailInput" type="email" placeholder="abrechnung@beispiel.at"></label>
+          </article>
+          <article class="admin-card">
+            <p class="eyebrow">STANDORTE</p><h2>Neuer Standort</h2>
+            <div class="inline-form"><input id="newLocationInput" type="text" placeholder="Standortname"><button id="createLocationButton" class="secondary-button">Anlegen</button></div>
+          </article>
+          <article class="admin-card">
+            <p class="eyebrow">EXCEL-IMPORT</p><h2>Sortiment importieren</h2>
+            <p>Zeile 1: Kategorien · Spalte A: Artikel · Kreuzung: Preis</p>
+            <label class="file-button">Exceldatei auswählen<input id="excelImportInput" type="file" accept=".xlsx,.xls"></label>
+          </article>
+          <article class="admin-card danger-card">
+            <p class="eyebrow">GEFAHRENZONE</p><h2>Umsatzdaten</h2>
+            <p>Löscht Verkäufe und Kassenstände dieses Standorts unwiderruflich.</p>
+            <button id="deleteSalesButton" class="danger-button">Umsatzdaten löschen</button>
+          </article>
+          <article class="admin-card">
+            <p class="eyebrow">KONTO</p><h2>Sitzung</h2>
+            <p id="currentUserLabel">Lokaler Modus</p>
+            <button id="logoutButton" class="secondary-button">Abmelden</button>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <main id="reportsView" class="reports-view hidden">
+      <div class="reports-topline">
+        <button id="backFromReports" class="back-button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          Zurück zur Kasse
+        </button>
+        <div class="reports-heading">
+          <div>
+            <p class="eyebrow">VERKAUFSJOURNAL</p>
+            <h1>Abrechnung</h1>
+            <p>Umsätze und ausgegebene Artikel im Überblick.</p>
+          </div>
+          <div class="report-actions">
+            <button id="emailReportButton" class="secondary-button">Abrechnung senden</button>
+            <button id="exportReportButton" class="primary-button export-button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+              Excel exportieren
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="report-filters">
+        <div class="filter-tabs" role="tablist" aria-label="Abrechnungszeitraum">
+          <button class="report-filter active" data-filter="today">Heute</button>
+          <button class="report-filter" data-filter="date">Datum</button>
+          <button class="report-filter" data-filter="all">Gesamt</button>
+        </div>
+        <label id="reportDateWrap" class="report-date hidden">
+          Datum
+          <input id="reportDateInput" type="date">
+        </label>
+        <span id="reportPeriodLabel" class="report-period-label"></span>
+      </div>
+
+      <section id="cashBalancePanel" class="cash-balance-panel">
+        <div>
+          <p class="eyebrow">KASSENABGLEICH</p>
+          <h2>Kassenstand</h2>
+          <p>Gezähltes Bargeld für den ausgewählten Tag.</p>
+        </div>
+        <label>
+          Kassenstand (€)
+          <input id="cashBalanceInput" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+        </label>
+        <div class="cash-difference">
+          <span>Differenz</span>
+          <strong id="cashDifference">–</strong>
+          <small>Kassenstand − Gesamtbetrag</small>
+        </div>
+      </section>
+
+      <section class="report-kpis">
+        <article><span>Umsatz</span><strong id="reportRevenue">0,00 €</strong><small>Artikel mit Preis &gt; 0 €</small></article>
+        <article><span>Abgeschlossene Bons</span><strong id="reportSalesCount">0</strong><small id="reportAverage">Ø 0,00 € pro Bon</small></article>
+        <article><span>Artikel gesamt</span><strong id="reportItemCount">0</strong><small id="reportFreeCount">0 davon mit 0 €</small></article>
+      </section>
+
+      <section class="report-table-card">
+        <div class="report-table-header">
+          <div><h2>Artikelübersicht</h2><p>Jeder Artikel wird einmal zusammengefasst.</p></div>
+          <span id="reportResultCount"></span>
+        </div>
+        <div class="report-table-scroll">
+          <table class="report-table">
+            <thead><tr><th>Artikel</th><th>Kategorie</th><th class="number">Menge</th><th class="number">Umsatz</th></tr></thead>
+            <tbody id="reportTableBody"></tbody>
+          </table>
+        </div>
+        <div id="emptyReport" class="list-empty hidden">Für diesen Zeitraum wurden noch keine Verkäufe erfasst.</div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="editorDialog" class="editor-dialog">
+    <form method="dialog" id="editorForm">
+      <div class="dialog-header">
+        <div><p class="eyebrow" id="dialogEyebrow">NEU ANLEGEN</p><h2 id="dialogTitle"></h2></div>
+        <button type="button" class="dialog-close" id="dialogClose" aria-label="Schließen">×</button>
+      </div>
+      <div id="categoryFields" class="form-fields">
+        <label>Bezeichnung<input id="categoryNameInput" type="text" maxlength="30" placeholder="z. B. Getränke"></label>
+        <fieldset>
+          <legend>Farbe</legend>
+          <div id="colorPicker" class="color-picker"></div>
+        </fieldset>
+      </div>
+      <div id="productFields" class="form-fields hidden">
+        <label>Artikelbezeichnung<input id="productNameInput" type="text" maxlength="40" placeholder="z. B. Cappuccino"></label>
+        <div class="form-row">
+          <label>Preis (€)<input id="productPriceInput" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+          <label>Kategorie<select id="productCategoryInput"></select></label>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button" id="dialogCancel">Abbrechen</button>
+        <button type="submit" class="primary-button">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="checkoutDialog" class="checkout-dialog">
+    <section id="paymentStep">
+      <p class="eyebrow">ZAHLUNG</p>
+      <h2>Zahlung abschließen</h2>
+      <div class="payment-due"><span>Zu zahlen</span><strong id="paymentTotal">0,00 €</strong></div>
+      <form id="paymentForm">
+        <label class="payment-entry">Gegebener Betrag
+          <input id="paymentAmountInput" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00" required>
+        </label>
+        <button id="exactPaymentButton" class="text-button payment-exact" type="button">Passend erhalten</button>
+        <div id="paymentChangeRow" class="payment-change">
+          <span id="paymentChangeLabel">Rückgeld</span>
+          <strong id="paymentChange">0,00 €</strong>
+        </div>
+        <div class="dialog-actions payment-actions">
+          <button id="cancelPaymentButton" class="secondary-button" type="button">Abbrechen</button>
+          <button id="confirmPaymentButton" class="primary-button" type="submit" disabled>Zahlung bestätigen</button>
+        </div>
+      </form>
+    </section>
+    <section id="paymentSuccess" class="hidden">
+      <div class="success-mark">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9"/></svg>
+      </div>
+      <p class="eyebrow">ZAHLUNG</p>
+      <h2>Bestellung abgeschlossen</h2>
+      <p id="checkoutMessage"></p>
+      <button id="newOrderButton" class="primary-button">Neue Bestellung</button>
+    </section>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="config.js?v=20260705-9"></script>
+  <script src="cloud.js?v=20260705-9"></script>
+  <script src="xlsx-export.js?v=20260705-9"></script>
+  <script src="app.js?v=20260705-9"></script>
+</body>
+</html>
