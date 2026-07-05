@@ -33,7 +33,11 @@ let locations = [];
 let currentLocationId = localStorage.getItem("kassenraum-current-location") || "local";
 let currentRole = "admin";
 let currentUserId = "";
+let currentUserEmail = "";
 let localMode = false;
+let managedUsers = [];
+let managedUsersLoading = false;
+let managedUsersError = "";
 let cart = [];
 let selectedCategory = "all";
 let editor = { type: null, id: null, color: COLORS[0], copySourceId: null };
@@ -234,13 +238,10 @@ async function startCloudSession() {
   const session = await CloudStore.session();
   if (!session) return false;
   currentUserId = session.user.id;
+  currentUserEmail = session.user.email || "";
   locations = await CloudStore.locations();
   if (!locations.length) {
     await CloudStore.createLocation("Hauptstandort");
-    locations = await CloudStore.locations();
-  }
-  if (locations.some((location) => location.role === "admin")) {
-    await CloudStore.syncLocationMemberships();
     locations = await CloudStore.locations();
   }
   const preferred = locations.some((location) => location.id === currentLocationId)
@@ -258,6 +259,7 @@ function startLocalMode() {
   localMode = true;
   currentRole = "admin";
   currentUserId = "";
+  currentUserEmail = "";
   try {
     locations = JSON.parse(localStorage.getItem("kassenraum-local-locations")) || [];
   } catch (_) {
@@ -661,48 +663,63 @@ function exportReport() {
   showToast("Excel-Abrechnung wurde erstellt");
 }
 
-function bytesToBase64(bytes) {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
 async function emailReport() {
   if (!appSettings.billingEmail) {
     showToast("Bitte zuerst eine Abrechnungs-E-Mail im Adminbereich hinterlegen.");
     return;
   }
-  if (localMode || !CloudStore.configured) {
-    showToast("Der automatische Versand benötigt die Supabase-Anmeldung.");
-    return;
-  }
+
   const button = $("#emailReportButton");
   const originalText = button.textContent;
   button.disabled = true;
-  button.textContent = "Wird gesendet …";
+  button.textContent = "Mail-App wird geöffnet …";
+
   try {
     const payload = buildExportPayload();
-    const summary = aggregateSales(filteredSales());
+    const sales = filteredSales();
+    const summary = aggregateSales(sales);
     const period = reportFilter === "all" ? "Gesamtabrechnung" : formatDateKey(selectedReportDateKey());
+    const locationName = locations.find((location) => location.id === currentLocationId)?.name || "Standort";
     const bytes = XlsxExport.createWorkbook(payload.workbook);
-    await CloudStore.sendReportEmail({
-      locationId: currentLocationId,
-      period,
-      filename: payload.filename,
-      attachmentBase64: bytesToBase64(bytes),
-      summary: {
-        revenue: summary.revenue,
-        receipts: filteredSales().length,
-        itemCount: summary.itemCount
-      }
+    const file = new File([bytes], payload.filename, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     });
-    showToast(`Abrechnung wurde an ${appSettings.billingEmail} gesendet`);
+    const subject = `Abrechnung ${locationName} – ${period}`;
+    const body = [
+      `Empfänger: ${appSettings.billingEmail}`,
+      "",
+      `Im Anhang befindet sich die Abrechnung für ${locationName}.`,
+      `Zeitraum: ${period}`,
+      `Umsatz: ${formatMoney(summary.revenue)}`,
+      `Belege: ${sales.length}`,
+      `Artikel: ${summary.itemCount}`
+    ].join("\n");
+
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: subject,
+          text: body
+        });
+        showToast("Abrechnung wurde an die Mail-App übergeben");
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          showToast("Teilen abgebrochen");
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    XlsxExport.downloadWorkbook(payload.workbook, payload.filename);
+    const fallbackBody = `${body}\n\nDie Exceldatei wurde heruntergeladen. Bitte diese Datei an die E-Mail anhängen.`;
+    window.location.href = `mailto:${encodeURIComponent(appSettings.billingEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(fallbackBody)}`;
+    showToast("Exceldatei heruntergeladen – bitte im Mailentwurf anhängen");
   } catch (error) {
     console.error(error);
-    showToast(error.message || "E-Mail-Versand fehlgeschlagen");
+    showToast(error.message || "Mail-App konnte nicht geöffnet werden");
   } finally {
     button.disabled = false;
     button.textContent = originalText;
@@ -714,6 +731,7 @@ function setSettingsTab(tab) {
   $("#categoriesTab").classList.toggle("hidden", tab !== "categories");
   $("#productsTab").classList.toggle("hidden", tab !== "products");
   $("#generalTab").classList.toggle("hidden", tab !== "general");
+  if (tab === "general" && currentRole === "admin") loadManagedUsers();
 }
 
 function renderSettings() {
@@ -763,7 +781,176 @@ function renderSettings() {
   setupCategoryDragAndDrop();
   $("#themeSelect").value = appSettings.theme || "dark";
   $("#billingEmailInput").value = appSettings.billingEmail || "";
-  $("#currentUserLabel").textContent = localMode ? "Lokaler Testmodus" : (CloudStore.client?.auth ? "Supabase-Konto aktiv" : "Nicht verbunden");
+  $("#currentUserLabel").textContent = localMode ? "Lokaler Testmodus" : (currentUserEmail || "Supabase-Konto aktiv");
+  renderUserManagement();
+}
+
+function adminLocations() {
+  return locations.filter((location) => location.role === "admin");
+}
+
+function locationChecksHtml(selectedIds = [], prefix = "location", disabled = false) {
+  const selected = new Set(selectedIds);
+  return adminLocations().map((location) => {
+    const inputId = `${prefix}-${location.id}`;
+    return `<label class="location-check" for="${inputId}">
+      <input id="${inputId}" type="checkbox" value="${location.id}" ${selected.has(location.id) ? "checked" : ""} ${disabled ? "disabled" : ""}>
+      <span>${escapeHtml(location.name)}</span>
+    </label>`;
+  }).join("");
+}
+
+function renderUserManagement() {
+  const createLocations = $("#newUserLocations");
+  const list = $("#managedUsersList");
+  if (!createLocations || !list) return;
+
+  const allAdminLocationIds = adminLocations().map((location) => location.id);
+  createLocations.innerHTML = locationChecksHtml(allAdminLocationIds, "new-user-location");
+
+  if (localMode) {
+    list.innerHTML = `<div class="list-empty">Benutzerverwaltung ist nur mit Supabase-Anmeldung verfügbar.</div>`;
+    $("#createUserForm").classList.add("hidden");
+    $("#refreshUsersButton").classList.add("hidden");
+    return;
+  }
+  $("#createUserForm").classList.remove("hidden");
+  $("#refreshUsersButton").classList.remove("hidden");
+
+  if (managedUsersLoading) {
+    list.innerHTML = `<div class="list-empty">Benutzer werden geladen …</div>`;
+    return;
+  }
+  if (managedUsersError) {
+    list.innerHTML = `<div class="list-empty">${escapeHtml(managedUsersError)}</div>`;
+    return;
+  }
+  if (!managedUsers.length) {
+    list.innerHTML = `<div class="list-empty">Noch keine Benutzer für deine Standorte vorhanden.</div>`;
+    return;
+  }
+
+  list.innerHTML = managedUsers.map((user) => {
+    const selectedIds = user.memberships.map((membership) => membership.locationId);
+    const role = user.memberships.some((membership) => membership.role === "admin") ? "admin" : "staff";
+    const disabled = user.isCurrentUser;
+    return `<article class="managed-user" data-user-id="${user.id}">
+      <div class="managed-user-header">
+        <span class="user-avatar">${escapeHtml(user.email.charAt(0).toUpperCase())}</span>
+        <div><strong>${escapeHtml(user.email)}</strong><small>${role === "admin" ? "Administrator" : "Staff"}</small></div>
+        ${disabled ? `<span class="current-user-badge">Du</span>` : ""}
+      </div>
+      <div class="managed-user-controls">
+        <label>Rolle
+          <select class="managed-user-role" ${disabled ? "disabled" : ""}>
+            <option value="staff" ${role === "staff" ? "selected" : ""}>Staff</option>
+            <option value="admin" ${role === "admin" ? "selected" : ""}>Administrator</option>
+          </select>
+        </label>
+        <div class="location-checks">${locationChecksHtml(selectedIds, `user-${user.id}`, disabled)}</div>
+        <div class="managed-user-actions">
+          <button class="secondary-button save-managed-user" type="button" ${disabled ? "disabled" : ""}>Speichern</button>
+          <button class="danger-button remove-managed-user" type="button" ${disabled ? "disabled" : ""}>Entfernen</button>
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+
+  $$(".save-managed-user").forEach((button) => button.addEventListener("click", () => {
+    updateManagedUser(button.closest(".managed-user"));
+  }));
+  $$(".remove-managed-user").forEach((button) => button.addEventListener("click", () => {
+    removeManagedUser(button.closest(".managed-user"));
+  }));
+}
+
+async function loadManagedUsers() {
+  if (localMode || currentRole !== "admin" || managedUsersLoading) {
+    renderUserManagement();
+    return;
+  }
+  managedUsersLoading = true;
+  managedUsersError = "";
+  renderUserManagement();
+  try {
+    const result = await CloudStore.manageUsers("list");
+    managedUsers = result.users || [];
+  } catch (error) {
+    managedUsers = [];
+    managedUsersError = "Benutzerverwaltung nicht erreichbar. Ist die Edge Function veröffentlicht?";
+    showToast(error.message || "Benutzer konnten nicht geladen werden");
+  } finally {
+    managedUsersLoading = false;
+    renderUserManagement();
+  }
+}
+
+function selectedLocationIds(container) {
+  return $$(`#${container} input[type="checkbox"]:checked`).map((input) => input.value);
+}
+
+async function createManagedUser(event) {
+  event.preventDefault();
+  const button = $("#createUserButton");
+  const payload = {
+    email: $("#newUserEmail").value.trim(),
+    password: $("#newUserPassword").value,
+    role: $("#newUserRole").value,
+    locationIds: selectedLocationIds("newUserLocations")
+  };
+  if (!payload.locationIds.length) {
+    showToast("Mindestens einen Standort auswählen");
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Wird angelegt …";
+  try {
+    await CloudStore.manageUsers("create", payload);
+    $("#createUserForm").reset();
+    showToast("Benutzer wurde angelegt");
+    await loadManagedUsers();
+  } catch (error) {
+    showToast(error.message || "Benutzer konnte nicht angelegt werden");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Benutzer anlegen";
+    renderUserManagement();
+  }
+}
+
+async function updateManagedUser(row) {
+  const userId = row?.dataset.userId;
+  if (!userId) return;
+  const locationIds = [...row.querySelectorAll('.location-check input:checked')].map((input) => input.value);
+  if (!locationIds.length) {
+    showToast("Mindestens einen Standort auswählen");
+    return;
+  }
+  try {
+    await CloudStore.manageUsers("update", {
+      userId,
+      role: row.querySelector(".managed-user-role").value,
+      locationIds
+    });
+    showToast("Benutzerzugriff gespeichert");
+    await loadManagedUsers();
+  } catch (error) {
+    showToast(error.message || "Benutzer konnte nicht gespeichert werden");
+  }
+}
+
+async function removeManagedUser(row) {
+  const userId = row?.dataset.userId;
+  const user = managedUsers.find((entry) => entry.id === userId);
+  if (!userId || !user) return;
+  if (!confirm(`${user.email} wirklich aus allen verwalteten Standorten entfernen?`)) return;
+  try {
+    await CloudStore.manageUsers("remove", { userId });
+    showToast("Benutzer wurde entfernt");
+    await loadManagedUsers();
+  } catch (error) {
+    showToast(error.message || "Benutzer konnte nicht entfernt werden");
+  }
 }
 
 function setupCategoryDragAndDrop() {
@@ -956,6 +1143,23 @@ function showToast(message) {
   toastTimer = setTimeout(() => $("#toast").classList.remove("show"), 1800);
 }
 
+async function logout() {
+  try {
+    if (!localMode) await CloudStore.signOut();
+  } catch (_) {}
+  localMode = false;
+  currentUserId = "";
+  currentUserEmail = "";
+  managedUsers = [];
+  managedUsersError = "";
+  $("#appShell").classList.add("hidden");
+  $("#settingsView").classList.add("hidden");
+  $("#reportsView").classList.add("hidden");
+  $("#posView").classList.remove("hidden");
+  $("#loginScreen").classList.remove("hidden");
+  $("#loginPassword").value = "";
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
@@ -1024,13 +1228,10 @@ $("#excelImportInput").addEventListener("change", async (event) => {
   event.target.value = "";
 });
 $("#deleteSalesButton").addEventListener("click", deleteRevenueData);
-$("#logoutButton").addEventListener("click", async () => {
-  if (!localMode) await CloudStore.signOut();
-  localMode = false;
-  currentUserId = "";
-  $("#appShell").classList.add("hidden");
-  $("#loginScreen").classList.remove("hidden");
-});
+$("#createUserForm").addEventListener("submit", createManagedUser);
+$("#refreshUsersButton").addEventListener("click", loadManagedUsers);
+$("#logoutButton").addEventListener("click", logout);
+$("#topLogoutButton").addEventListener("click", logout);
 $("#editorForm").addEventListener("submit", saveEditor);
 $("#dialogClose").addEventListener("click", () => $("#editorDialog").close());
 $("#dialogCancel").addEventListener("click", () => $("#editorDialog").close());

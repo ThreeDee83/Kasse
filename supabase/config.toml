@@ -1,4 +1,4 @@
 project_id = "kassenraum"
 
-[functions.send-report]
+[functions.manage-users]
 verify_jwt = true

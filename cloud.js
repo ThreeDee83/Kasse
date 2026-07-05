@@ -99,6 +99,23 @@
     return data;
   }
 
+  async function manageUsers(action, payload = {}) {
+    if (!client) throw new Error("Supabase ist nicht konfiguriert.");
+    const { data, error } = await client.functions.invoke("manage-users", {
+      body: { action, ...payload }
+    });
+    if (error) {
+      let message = error.message || "Benutzerverwaltung fehlgeschlagen.";
+      try {
+        const details = await error.context?.json();
+        if (details?.error) message = details.error;
+      } catch (_) {}
+      throw new Error(message);
+    }
+    if (!data?.ok) throw new Error(data?.error || "Benutzerverwaltung fehlgeschlagen.");
+    return data;
+  }
+
   async function loadLocation(locationId) {
     const [stateResult, salesResult, cashResult] = await Promise.all([
       client.from("location_state").select("*").eq("location_id", locationId).maybeSingle(),
@@ -139,21 +156,6 @@
     if (cashError) throw cashError;
   }
 
-  async function sendReportEmail(payload) {
-    if (!client) throw new Error("Supabase ist nicht konfiguriert.");
-    const { data, error } = await client.functions.invoke("send-report", { body: payload });
-    if (error) {
-      let message = error.message || "E-Mail-Versand fehlgeschlagen.";
-      try {
-        const details = await error.context?.json();
-        if (details?.error) message = details.error;
-      } catch (_) {}
-      throw new Error(message);
-    }
-    if (!data?.ok) throw new Error(data?.error || "E-Mail-Versand fehlgeschlagen.");
-    return data;
-  }
-
   function subscribe(locationId, callback, userId, membershipCallback) {
     if (channel) client.removeChannel(channel);
     channel = client.channel(`location-${locationId}`)
@@ -166,7 +168,7 @@
 
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, createLocation, loadLocation,
-    syncLocationMemberships, saveState, insertSale, saveCash, deleteCash, deleteSales, sendReportEmail, subscribe, flushQueue
+    syncLocationMemberships, manageUsers, saveState, insertSale, saveCash, deleteCash, deleteSales, subscribe, flushQueue
   };
   global.addEventListener("online", flushQueue);
 })(globalThis);

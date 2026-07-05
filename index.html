@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260705-11">
+  <link rel="stylesheet" href="styles.css?v=20260705-13">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -48,6 +48,9 @@
         </button>
         <button class="icon-button" id="settingsButton" aria-label="Einstellungen öffnen" title="Einstellungen">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .63 1.7 1.7 0 0 0-.38 1.08V21h-4v-.09A1.7 1.7 0 0 0 8.56 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.2 15a1.7 1.7 0 0 0-.63-1 1.7 1.7 0 0 0-1.08-.38H2v-4h.49A1.7 1.7 0 0 0 4 8.56a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.37 4.2a1.7 1.7 0 0 0 1-.63A1.7 1.7 0 0 0 9.75 2.5V2h4v.49A1.7 1.7 0 0 0 14.81 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 .63 1 1.7 1.7 0 0 0 1.08.38H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+        </button>
+        <button class="icon-button logout-topbar" id="topLogoutButton" aria-label="Abmelden" title="Abmelden">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"/></svg>
         </button>
       </div>
     </header>
@@ -170,6 +173,26 @@
             <p id="currentUserLabel">Lokaler Modus</p>
             <button id="logoutButton" class="secondary-button">Abmelden</button>
           </article>
+          <article class="admin-card users-card">
+            <div class="users-card-heading">
+              <div><p class="eyebrow">ZUGRIFF</p><h2>Benutzerverwaltung</h2></div>
+              <button id="refreshUsersButton" class="secondary-button" type="button">Aktualisieren</button>
+            </div>
+            <p>Login anlegen und Rolle sowie Standortzugriff festlegen.</p>
+            <form id="createUserForm" class="create-user-form">
+              <label>E-Mail<input id="newUserEmail" type="email" autocomplete="off" required placeholder="mitarbeiter@beispiel.at"></label>
+              <label>Startpasswort<input id="newUserPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="Mindestens 8 Zeichen"></label>
+              <label>Rolle<select id="newUserRole"><option value="staff">Staff</option><option value="admin">Administrator</option></select></label>
+              <fieldset>
+                <legend>Standorte</legend>
+                <div id="newUserLocations" class="location-checks"></div>
+              </fieldset>
+              <button id="createUserButton" class="primary-button" type="submit">Benutzer anlegen</button>
+            </form>
+            <div id="managedUsersList" class="managed-users-list">
+              <div class="list-empty">Benutzer werden geladen …</div>
+            </div>
+          </article>
         </div>
       </section>
     </main>
@@ -187,7 +210,7 @@
             <p>Umsätze und ausgegebene Artikel im Überblick.</p>
           </div>
           <div class="report-actions">
-            <button id="emailReportButton" class="secondary-button">Abrechnung senden</button>
+            <button id="emailReportButton" class="secondary-button">Mit Mail-App senden</button>
             <button id="exportReportButton" class="primary-button export-button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
               Excel exportieren
@@ -309,9 +332,9 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="config.js?v=20260705-11"></script>
-  <script src="cloud.js?v=20260705-11"></script>
-  <script src="xlsx-export.js?v=20260705-11"></script>
-  <script src="app.js?v=20260705-11"></script>
+  <script src="config.js?v=20260705-13"></script>
+  <script src="cloud.js?v=20260705-13"></script>
+  <script src="xlsx-export.js?v=20260705-13"></script>
+  <script src="app.js?v=20260705-13"></script>
 </body>
 </html>

@@ -77,6 +77,7 @@ body[data-theme="light"] .cart-footer { background: #fbfaf6; }
 .icon-button { width: 41px; height: 41px; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--line); background: var(--white); cursor: pointer; transition: .2s; }
 .icon-button:hover { background: var(--green); border-color: var(--green); color: #07130f; transform: rotate(12deg); }
 .icon-button svg { width: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.logout-topbar:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 18%, var(--white)); color: var(--danger); transform: none; }
 
 .pos-layout { height: calc(100vh - 74px); display: grid; grid-template-columns: 190px minmax(390px, 1fr) 370px; overflow: hidden; }
 .category-panel { padding: 26px 15px; border-right: 1px solid var(--line); background: var(--panel); overflow-y: auto; }
@@ -265,6 +266,27 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .file-button input { display: none; }
 .danger-card { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
 .danger-button { padding: 10px 13px; border: 1px solid var(--danger); border-radius: 9px; background: transparent; color: var(--danger); cursor: pointer; font-weight: 700; }
+.users-card { grid-column: 1 / -1; }
+.users-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.users-card-heading h2 { margin-bottom: 0; }
+.create-user-form { display: grid; grid-template-columns: minmax(180px, 1.3fr) minmax(160px, 1fr) 150px; gap: 13px; margin-top: 20px; padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.create-user-form fieldset { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; }
+.create-user-form legend { margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.create-user-form > button { justify-self: start; }
+.location-checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.location-check { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); color: var(--ink) !important; cursor: pointer; }
+.admin-card .location-check input { width: auto; margin: 0; accent-color: var(--green); }
+.managed-users-list { display: flex; flex-direction: column; gap: 9px; margin-top: 20px; }
+.managed-user { padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.managed-user-header { display: flex; align-items: center; gap: 11px; margin-bottom: 13px; }
+.user-avatar { flex: 0 0 auto; width: 35px; height: 35px; display: grid; place-items: center; border-radius: 10px; background: color-mix(in srgb, var(--green) 17%, var(--panel-soft)); color: var(--green); font-weight: 800; }
+.managed-user-header strong { display: block; font-size: 14px; }
+.managed-user-header small { color: var(--muted); }
+.current-user-badge { margin-left: auto; padding: 4px 8px; border-radius: 999px; background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.managed-user-controls { display: grid; grid-template-columns: 170px minmax(240px, 1fr) auto; align-items: end; gap: 12px; }
+.managed-user-controls .location-checks { align-self: center; }
+.managed-user-actions { display: flex; gap: 7px; }
+.managed-user-actions button { white-space: nowrap; }
 
 @media (min-width: 761px) and (max-width: 1100px) {
   .pos-layout {
@@ -334,11 +356,18 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .report-date { justify-content: space-between; padding: 0 5px 3px; }
   .report-date input { flex: 1; max-width: 210px; }
   .admin-grid { grid-template-columns: 1fr; }
+  .create-user-form { grid-template-columns: 1fr 1fr; }
+  .create-user-form > label:last-of-type { grid-column: 1 / -1; }
+  .managed-user-controls { grid-template-columns: 1fr; }
+  .managed-user-actions { justify-content: flex-start; }
 }
 @media (max-width: 500px) {
   .topbar-actions { gap: 8px; }
-  .brand small { display: none; }
-  .location-picker select { max-width: 100px; }
+  .brand > span:last-child { display: none; }
+  .location-picker select { max-width: 80px; }
+  .topbar { padding: 0 12px; }
+  .create-user-form { grid-template-columns: 1fr; }
+  .create-user-form > label:last-of-type { grid-column: auto; }
   .reports-heading { display: block; }
   .reports-heading .export-button { width: 100%; justify-content: center; margin-top: 18px; }
   .report-actions { display: grid; grid-template-columns: 1fr; margin-top: 18px; }
