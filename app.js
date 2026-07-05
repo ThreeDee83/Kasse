@@ -32,6 +32,7 @@ const legacySnapshot = {
 let locations = [];
 let currentLocationId = localStorage.getItem("kassenraum-current-location") || "local";
 let currentRole = "admin";
+let currentUserId = "";
 let localMode = false;
 let cart = [];
 let selectedCategory = "all";
@@ -160,6 +161,24 @@ function loadLocalLocation(locationId) {
   appSettings = { theme: "dark", billingEmail: "", ...read("kassenraum-settings", {}) };
 }
 
+async function refreshLocationMemberships() {
+  if (localMode || !currentUserId) return;
+  try {
+    const updatedLocations = await CloudStore.locations();
+    if (!updatedLocations.length) return;
+    locations = updatedLocations;
+    const currentLocation = locations.find((location) => location.id === currentLocationId);
+    if (!currentLocation) {
+      await switchLocation(locations[0].id);
+      showToast("Standortzugriff wurde aktualisiert");
+      return;
+    }
+    currentRole = currentLocation.role || "staff";
+    renderAll();
+    showToast("Standorte wurden aktualisiert");
+  } catch (_) {}
+}
+
 async function switchLocation(locationId, background = false) {
   const location = locations.find((entry) => entry.id === locationId);
   if (!location) return;
@@ -190,10 +209,18 @@ async function switchLocation(locationId, background = false) {
       Object.entries(cashBalances).forEach(([dateKey, balance]) => CloudStore.saveCash(locationId, dateKey, balance));
       if (shouldMigrate) localStorage.setItem("kassenraum-cloud-migrated", "1");
     }
-    CloudStore.subscribe(locationId, () => {
-      clearTimeout(realtimeReloadTimer);
-      realtimeReloadTimer = setTimeout(() => switchLocation(locationId, true), 350);
-    });
+    CloudStore.subscribe(
+      locationId,
+      () => {
+        clearTimeout(realtimeReloadTimer);
+        realtimeReloadTimer = setTimeout(() => switchLocation(locationId, true), 350);
+      },
+      currentUserId,
+      () => {
+        clearTimeout(realtimeReloadTimer);
+        realtimeReloadTimer = setTimeout(refreshLocationMemberships, 350);
+      }
+    );
     if (!background) showToast(`Standort: ${location.name}`);
   } catch (error) {
     loadLocalLocation(locationId);
@@ -206,9 +233,14 @@ async function switchLocation(locationId, background = false) {
 async function startCloudSession() {
   const session = await CloudStore.session();
   if (!session) return false;
+  currentUserId = session.user.id;
   locations = await CloudStore.locations();
   if (!locations.length) {
     await CloudStore.createLocation("Hauptstandort");
+    locations = await CloudStore.locations();
+  }
+  if (locations.some((location) => location.role === "admin")) {
+    await CloudStore.syncLocationMemberships();
     locations = await CloudStore.locations();
   }
   const preferred = locations.some((location) => location.id === currentLocationId)
@@ -225,6 +257,7 @@ async function startCloudSession() {
 function startLocalMode() {
   localMode = true;
   currentRole = "admin";
+  currentUserId = "";
   try {
     locations = JSON.parse(localStorage.getItem("kassenraum-local-locations")) || [];
   } catch (_) {
@@ -994,6 +1027,7 @@ $("#deleteSalesButton").addEventListener("click", deleteRevenueData);
 $("#logoutButton").addEventListener("click", async () => {
   if (!localMode) await CloudStore.signOut();
   localMode = false;
+  currentUserId = "";
   $("#appShell").classList.add("hidden");
   $("#loginScreen").classList.remove("hidden");
 });
@@ -1028,7 +1062,12 @@ $("#loginForm").addEventListener("submit", async (event) => {
     $("#loginError").textContent = error.message;
     $("#loginError").classList.remove("hidden");
   } else {
-    await startCloudSession();
+    try {
+      await startCloudSession();
+    } catch (sessionError) {
+      $("#loginError").textContent = sessionError.message || "Standorte konnten nicht geladen werden.";
+      $("#loginError").classList.remove("hidden");
+    }
   }
   button.disabled = false;
 });

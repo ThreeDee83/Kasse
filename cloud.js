@@ -93,6 +93,12 @@
     return data;
   }
 
+  async function syncLocationMemberships() {
+    const { data, error } = await client.rpc("sync_location_memberships");
+    if (error) throw error;
+    return data;
+  }
+
   async function loadLocation(locationId) {
     const [stateResult, salesResult, cashResult] = await Promise.all([
       client.from("location_state").select("*").eq("location_id", locationId).maybeSingle(),
@@ -148,18 +154,19 @@
     return data;
   }
 
-  function subscribe(locationId, callback) {
+  function subscribe(locationId, callback, userId, membershipCallback) {
     if (channel) client.removeChannel(channel);
     channel = client.channel(`location-${locationId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "location_state", filter: `location_id=eq.${locationId}` }, callback)
       .on("postgres_changes", { event: "*", schema: "public", table: "sales", filter: `location_id=eq.${locationId}` }, callback)
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_balances", filter: `location_id=eq.${locationId}` }, callback)
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_locations", filter: `user_id=eq.${userId}` }, membershipCallback)
       .subscribe();
   }
 
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, createLocation, loadLocation,
-    saveState, insertSale, saveCash, deleteCash, deleteSales, sendReportEmail, subscribe, flushQueue
+    syncLocationMemberships, saveState, insertSale, saveCash, deleteCash, deleteSales, sendReportEmail, subscribe, flushQueue
   };
   global.addEventListener("online", flushQueue);
 })(globalThis);

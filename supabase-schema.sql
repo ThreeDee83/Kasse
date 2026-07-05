@@ -46,23 +46,79 @@ create or replace function public.is_location_admin(target_location uuid)
 returns boolean language sql stable security definer set search_path = public
 as $$ select exists(select 1 from user_locations where user_id = auth.uid() and location_id = target_location and role = 'admin') $$;
 
+create or replace function public.sync_location_memberships()
+returns integer language plpgsql security definer set search_path = public
+as $$
+declare affected_rows integer := 0;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not exists (
+    select 1 from user_locations where user_id = auth.uid() and role = 'admin'
+  ) then
+    raise exception 'Admin role required';
+  end if;
+
+  with admin_locations as (
+    select location_id
+    from user_locations
+    where user_id = auth.uid() and role = 'admin'
+  ),
+  shared_members as (
+    select
+      memberships.user_id,
+      case when bool_or(memberships.role = 'admin') then 'admin' else 'staff' end as role
+    from user_locations memberships
+    join admin_locations on admin_locations.location_id = memberships.location_id
+    group by memberships.user_id
+  ),
+  synchronized as (
+    insert into user_locations (user_id, location_id, role)
+    select shared_members.user_id, admin_locations.location_id, shared_members.role
+    from shared_members
+    cross join admin_locations
+    on conflict (user_id, location_id) do update
+      set role = case
+        when user_locations.role = 'admin' or excluded.role = 'admin' then 'admin'
+        else 'staff'
+      end
+    returning 1
+  )
+  select count(*) into affected_rows from synchronized;
+
+  return affected_rows;
+end $$;
+
 create or replace function public.create_location(location_name text)
 returns uuid language plpgsql security definer set search_path = public
 as $$
 declare new_id uuid;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if exists (select 1 from locations)
+    and not exists (
+      select 1 from user_locations where user_id = auth.uid() and role = 'admin'
+    )
+  then
+    raise exception 'Admin role required';
+  end if;
   insert into locations(name) values (trim(location_name)) returning id into new_id;
   insert into user_locations(user_id, location_id, role) values (auth.uid(), new_id, 'admin');
   insert into location_state(location_id) values (new_id);
+  perform public.sync_location_memberships();
   return new_id;
 end $$;
+
+revoke all on function public.create_location(text) from public;
+revoke all on function public.sync_location_memberships() from public;
+grant execute on function public.create_location(text) to authenticated;
+grant execute on function public.sync_location_memberships() to authenticated;
 
 alter table public.locations enable row level security;
 alter table public.user_locations enable row level security;
 alter table public.location_state enable row level security;
 alter table public.sales enable row level security;
 alter table public.cash_balances enable row level security;
+alter table public.user_locations replica identity full;
 
 drop policy if exists "members read locations" on public.locations;
 drop policy if exists "users read memberships" on public.user_locations;
@@ -107,5 +163,11 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.cash_balances;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.user_locations;
 exception when duplicate_object then null;
 end $$;
