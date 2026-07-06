@@ -276,12 +276,13 @@
     const detailRows = payload.detailRows || [];
     const workbook = XLSX.utils.book_new();
 
-    const details = [["Datum", "Mitarbeiter", "Standort", "Eingestempelt", "Ausgestempelt", "Stunden", "Status"]];
+    const details = [["Datum", "Mitarbeiter", "Standort", "Eingestempelt", "Ausgestempelt", "Stunden", "Stundensatz", "Grundlohn", "Status"]];
     detailRows.forEach((row) => details.push([
-      row.dateLabel, row.employeeName, row.locationName, row.clockInLabel, row.clockOutLabel, row.hours, row.open ? "Offen" : "Abgeschlossen"
+      row.dateLabel, row.employeeName, row.locationName, row.clockInLabel, row.clockOutLabel,
+      row.hours, row.hourlyRate, row.wages, row.open ? "Offen" : "Abgeschlossen"
     ]));
     const detailSheet = XLSX.utils.aoa_to_sheet(details);
-    styleSheet(detailSheet, [14, 24, 20, 21, 21, 12, 15], [], [5]);
+    styleSheet(detailSheet, [14, 24, 20, 21, 21, 12, 15, 15, 15], [6, 7], [5]);
     XLSX.utils.book_append_sheet(workbook, detailSheet, "Stempelzeiten");
 
     const detailLastRow = Math.max(detailRows.length + 1, 2);
@@ -292,8 +293,8 @@
         row.dateLabel,
         row.employeeName,
         { t: "n", f: `SUMIFS('Stempelzeiten'!$F$2:$F$${detailLastRow},'Stempelzeiten'!$A$2:$A$${detailLastRow},A${excelRow},'Stempelzeiten'!$B$2:$B$${detailLastRow},B${excelRow})`, v: row.hours },
-        row.hourlyRate,
-        { t: "n", f: `C${excelRow}*D${excelRow}`, v: row.wages },
+        { t: "n", f: `IFERROR(E${excelRow}/C${excelRow},0)`, v: row.hourlyRate },
+        { t: "n", f: `SUMIFS('Stempelzeiten'!$H$2:$H$${detailLastRow},'Stempelzeiten'!$A$2:$A$${detailLastRow},A${excelRow},'Stempelzeiten'!$B$2:$B$${detailLastRow},B${excelRow})`, v: row.wages },
         row.bonus,
         { t: "n", f: `E${excelRow}+F${excelRow}`, v: row.total },
         row.bonusNote

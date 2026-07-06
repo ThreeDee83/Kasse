@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260706-5">
+  <link rel="stylesheet" href="styles.css?v=20260706-8">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -58,6 +58,11 @@
         </button>
       </div>
     </header>
+
+    <section id="activeEmployeesBar" class="active-employees-bar hidden" aria-live="polite">
+      <strong>Aktuell eingestempelt</strong>
+      <div id="activeEmployeesList" class="active-employees-list"></div>
+    </section>
 
     <main id="posView" class="pos-layout">
       <aside class="category-panel">
@@ -156,7 +161,8 @@
           </article>
           <article class="admin-card">
             <p class="eyebrow">ABRECHNUNG</p><h2>E-Mail</h2>
-            <label>Abrechnungs-E-Mail<input id="billingEmailInput" type="email" placeholder="abrechnung@beispiel.at"></label>
+            <label>Abrechnungs-E-Mail 1<input id="billingEmailInput" type="email" placeholder="abrechnung@beispiel.at"></label>
+            <label>Zweite Abrechnungs-E-Mail<input id="billingEmail2Input" type="email" placeholder="Optional"></label>
           </article>
           <article class="admin-card">
             <p class="eyebrow">STANDORTE</p><h2>Standorte verwalten</h2>
@@ -245,9 +251,10 @@
             <p class="eyebrow">KORREKTUR</p><h2>Stempelzeit hinzufügen</h2>
             <form id="manualTimeForm" class="time-form-grid">
               <label>Mitarbeiter<select id="manualEmployeeSelect" required></select></label>
-              <label>Datum<input id="manualDateInput" type="date" required></label>
-              <label>Von<input id="manualStartInput" type="time" required></label>
-              <label>Bis<input id="manualEndInput" type="time" required></label>
+              <label>Startdatum<input id="manualDateInput" type="date" required></label>
+              <label>Startzeit<input id="manualStartInput" type="time" required></label>
+              <label>Enddatum<input id="manualEndDateInput" type="date" required></label>
+              <label>Endzeit<input id="manualEndInput" type="time" required></label>
               <button class="secondary-button" type="submit">Stempelzeit hinzufügen</button>
             </form>
           </article>
@@ -414,12 +421,46 @@
     </section>
   </dialog>
 
+  <dialog id="timeEntryDialog" class="editor-dialog">
+    <form id="timeEntryEditForm">
+      <div class="dialog-header">
+        <div><p class="eyebrow">ARBEITSZEIT</p><h2>Stempelzeit bearbeiten</h2></div>
+        <button type="button" class="dialog-close" id="timeEntryDialogClose" aria-label="Schließen">×</button>
+      </div>
+      <input id="timeEntryEditId" type="hidden">
+      <div class="form-fields">
+        <label>Mitarbeiter<select id="timeEntryEmployeeInput" required></select></label>
+        <label>Standort<select id="timeEntryLocationInput" required></select></label>
+        <div class="form-row">
+          <label>Start<input id="timeEntryStartInput" type="datetime-local" step="1" required></label>
+          <label>Ende<input id="timeEntryEndInput" type="datetime-local" step="1"></label>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button" id="timeEntryDialogCancel">Abbrechen</button>
+        <button type="submit" class="primary-button">Änderungen speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rateChangeDialog" class="editor-dialog">
+    <div class="dialog-header">
+      <div><p class="eyebrow">STUNDENSATZ</p><h2>Vergangene Zeiten neu berechnen?</h2></div>
+    </div>
+    <p id="rateChangeMessage" class="dialog-message"></p>
+    <p class="dialog-hint">Die Rückwirkung ist auf höchstens zwei Monate begrenzt.</p>
+    <div class="dialog-actions">
+      <button type="button" class="secondary-button" id="rateChangeNoButton">Nein, nur künftig</button>
+      <button type="button" class="primary-button" id="rateChangeYesButton">Ja, neu berechnen</button>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="config.js?v=20260706-5"></script>
-  <script src="cloud.js?v=20260706-5"></script>
-  <script src="xlsx-export.js?v=20260706-5"></script>
-  <script src="app.js?v=20260706-5"></script>
+  <script src="config.js?v=20260706-8"></script>
+  <script src="cloud.js?v=20260706-8"></script>
+  <script src="xlsx-export.js?v=20260706-8"></script>
+  <script src="app.js?v=20260706-8"></script>
 </body>
 </html>

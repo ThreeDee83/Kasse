@@ -79,9 +79,9 @@ function loadCashBalances() {
 
 function loadAppSettings() {
   try {
-    return { theme: "dark", billingEmail: "", ...(JSON.parse(localStorage.getItem("kassenraum-settings")) || {}) };
+    return { theme: "dark", billingEmail: "", billingEmail2: "", ...(JSON.parse(localStorage.getItem("kassenraum-settings")) || {}) };
   } catch (_) {
-    return { theme: "dark", billingEmail: "" };
+    return { theme: "dark", billingEmail: "", billingEmail2: "" };
   }
 }
 
@@ -116,10 +116,17 @@ function categoryFor(id) {
   return data.categories.find((category) => category.id === id);
 }
 
+function isAdminUser() {
+  return localMode
+    || currentRole === "admin"
+    || locations.some((location) => String(location.role || "").toLowerCase() === "admin");
+}
+
 function renderAll() {
   applyTheme();
   renderRoleAccess();
   renderLocationSelector();
+  renderActiveEmployees();
   renderCategories();
   renderProducts();
   renderCart();
@@ -127,7 +134,7 @@ function renderAll() {
 }
 
 function renderRoleAccess() {
-  const isAdmin = currentRole === "admin";
+  const isAdmin = isAdminUser();
   $("#settingsButton").classList.toggle("hidden", !isAdmin);
   $$(".open-settings").forEach((button) => button.classList.toggle("hidden", !isAdmin));
   $$(".admin-only").forEach((element) => element.classList.toggle("hidden", !isAdmin));
@@ -170,7 +177,7 @@ function loadLocalLocation(locationId) {
   data = read("kassenraum-data", structuredClone(DEFAULT_DATA));
   sales = read("kassenraum-sales", []);
   cashBalances = read("kassenraum-cash-balances", {});
-  appSettings = { theme: "dark", billingEmail: "", ...read("kassenraum-settings", {}) };
+  appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", ...read("kassenraum-settings", {}) };
   const readGlobal = (key, fallback) => {
     try {
       return JSON.parse(localStorage.getItem(key)) ?? fallback;
@@ -180,7 +187,11 @@ function loadLocalLocation(locationId) {
   };
   employees = readGlobal("kassenraum-employees-global", read("kassenraum-employees", []));
   timeEntries = readGlobal("kassenraum-time-entries-global", read("kassenraum-time-entries", []))
-    .map((entry) => ({ ...entry, locationId: entry.locationId || locationId }));
+    .map((entry) => ({
+      ...entry,
+      locationId: entry.locationId || locationId,
+      hourlyRate: Number(entry.hourlyRate ?? employees.find((employee) => employee.id === entry.employeeId)?.hourlyRate ?? 0)
+    }));
   employeeBonuses = readGlobal("kassenraum-employee-bonuses-global", read("kassenraum-employee-bonuses", []));
 }
 
@@ -220,14 +231,14 @@ async function switchLocation(locationId, background = false) {
     const isNewLocation = !remoteData?.categories?.length;
     const shouldMigrate = isNewLocation && !localStorage.getItem("kassenraum-cloud-migrated");
     data = isNewLocation ? structuredClone(shouldMigrate ? legacySnapshot.data : DEFAULT_DATA) : remoteData;
-    appSettings = { theme: "dark", billingEmail: "", ...(shouldMigrate ? legacySnapshot.settings : remote.state?.settings || {}) };
+    appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", ...(shouldMigrate ? legacySnapshot.settings : remote.state?.settings || {}) };
     sales = shouldMigrate && !remote.sales.length ? structuredClone(legacySnapshot.sales) : remote.sales;
     cashBalances = shouldMigrate && !Object.keys(remote.cashBalances).length ? structuredClone(legacySnapshot.cashBalances) : remote.cashBalances;
     persistSales();
     persistCashBalances();
     localStorage.setItem(scopedKey("kassenraum-data"), JSON.stringify(data));
     localStorage.setItem(scopedKey("kassenraum-settings"), JSON.stringify(appSettings));
-    if (isNewLocation && currentRole === "admin") {
+    if (isNewLocation && isAdminUser()) {
       persist();
       sales.forEach((sale) => CloudStore.insertSale(locationId, sale));
       Object.entries(cashBalances).forEach(([dateKey, balance]) => CloudStore.saveCash(locationId, dateKey, balance));
@@ -278,6 +289,7 @@ async function startCloudSession() {
   $("#currentUserLabel").textContent = session.user.email || "Supabase-Konto";
   showApplication();
   await switchLocation(preferred);
+  await reloadTimeTracking();
   CloudStore.flushQueue();
   return true;
 }
@@ -406,7 +418,7 @@ function renderCart() {
 }
 
 function openSettings(tab = "categories") {
-  if (currentRole !== "admin") {
+  if (!isAdminUser()) {
     showToast("Nur Administratoren können die Einstellungen öffnen.");
     return;
   }
@@ -695,7 +707,8 @@ function exportReport() {
 }
 
 async function emailReport() {
-  if (!appSettings.billingEmail) {
+  const recipients = [appSettings.billingEmail, appSettings.billingEmail2].map((email) => String(email || "").trim()).filter(Boolean);
+  if (!recipients.length) {
     showToast("Bitte zuerst eine Abrechnungs-E-Mail im Adminbereich hinterlegen.");
     return;
   }
@@ -717,11 +730,11 @@ async function emailReport() {
     });
     const subject = `Abrechnung ${locationName} – ${period}`;
     const body = [
-      `Empfänger: ${appSettings.billingEmail}`,
+      `Empfänger: ${recipients.join(", ")}`,
       "",
       `Im Anhang befindet sich die Abrechnung für ${locationName}.`,
       `Zeitraum: ${period}`,
-      `Umsatz: ${formatMoney(summary.revenue)}`,
+      `Umsatz: ${euro(summary.revenue)}`,
       `Belege: ${sales.length}`,
       `Artikel: ${summary.itemCount}`
     ].join("\n");
@@ -746,7 +759,8 @@ async function emailReport() {
 
     XlsxExport.downloadWorkbook(payload.workbook, payload.filename);
     const fallbackBody = `${body}\n\nDie Exceldatei wurde heruntergeladen. Bitte diese Datei an die E-Mail anhängen.`;
-    window.location.href = `mailto:${encodeURIComponent(appSettings.billingEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(fallbackBody)}`;
+    const mailRecipients = recipients.map((email) => encodeURIComponent(email)).join(",");
+    window.location.href = `mailto:${mailRecipients}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(fallbackBody)}`;
     showToast("Exceldatei heruntergeladen – bitte im Mailentwurf anhängen");
   } catch (error) {
     console.error(error);
@@ -768,6 +782,7 @@ function normalizeTimeTracking(remote) {
     id: entry.id,
     employeeId: entry.employee_id || entry.employeeId,
     locationId: entry.location_id || entry.locationId || null,
+    hourlyRate: Number(entry.hourly_rate ?? entry.hourlyRate ?? employees.find((employee) => employee.id === (entry.employee_id || entry.employeeId))?.hourlyRate ?? 0),
     clockIn: entry.clock_in || entry.clockIn,
     clockOut: entry.clock_out || entry.clockOut || null
   }));
@@ -791,6 +806,20 @@ async function reloadTimeTracking() {
   renderTimeTracking();
 }
 
+function renderActiveEmployees() {
+  const bar = $("#activeEmployeesBar");
+  const list = $("#activeEmployeesList");
+  if (!bar || !list) return;
+  const openEntries = timeEntries
+    .filter((entry) => !entry.clockOut)
+    .sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn));
+  bar.classList.toggle("hidden", !openEntries.length);
+  list.innerHTML = openEntries.map((entry) => {
+    const employee = employeeForTime(entry.employeeId);
+    return `<span class="active-employee-chip"><strong>${escapeHtml(employee?.name || "Unbekannt")}</strong><span>${escapeHtml(locationNameForTime(entry.locationId))} · seit ${escapeHtml(formatDateTime(entry.clockIn))}</span></span>`;
+  }).join("");
+}
+
 async function openTimeClock() {
   $("#posView").classList.add("hidden");
   $("#settingsView").classList.add("hidden");
@@ -800,6 +829,7 @@ async function openTimeClock() {
   if (!$("#timeFromDate").value) $("#timeFromDate").value = `${today.slice(0, 8)}01`;
   if (!$("#timeToDate").value) $("#timeToDate").value = today;
   $("#manualDateInput").value = today;
+  $("#manualEndDateInput").value = today;
   $("#bonusDateInput").value = today;
   renderRoleAccess();
   await reloadTimeTracking();
@@ -855,28 +885,31 @@ function aggregateTimeTracking() {
   const { from, to } = timeRange();
   const dailyMap = new Map();
   timeEntries.forEach((entry) => {
+    const entryRate = Number(entry.hourlyRate ?? employeeForTime(entry.employeeId)?.hourlyRate ?? 0);
     splitEntryByDay(entry).forEach((segment) => {
       if (segment.dateKey < from || segment.dateKey > to) return;
       const key = `${entry.employeeId}|${segment.dateKey}`;
-      const current = dailyMap.get(key) || { employeeId: entry.employeeId, dateKey: segment.dateKey, hours: 0 };
+      const current = dailyMap.get(key) || { employeeId: entry.employeeId, dateKey: segment.dateKey, hours: 0, wages: 0 };
       current.hours += segment.hours;
+      current.wages += segment.hours * entryRate;
       dailyMap.set(key, current);
     });
   });
   employeeBonuses.forEach((bonus) => {
     if (bonus.dateKey < from || bonus.dateKey > to) return;
     const key = `${bonus.employeeId}|${bonus.dateKey}`;
-    if (!dailyMap.has(key)) dailyMap.set(key, { employeeId: bonus.employeeId, dateKey: bonus.dateKey, hours: 0 });
+    if (!dailyMap.has(key)) dailyMap.set(key, { employeeId: bonus.employeeId, dateKey: bonus.dateKey, hours: 0, wages: 0 });
   });
 
   const dailyRows = [...dailyMap.values()].map((row) => {
     const employee = employeeForTime(row.employeeId) || { name: "Unbekannt", hourlyRate: 0 };
     const bonus = employeeBonuses.find((item) => item.employeeId === row.employeeId && item.dateKey === row.dateKey);
-    const wages = row.hours * employee.hourlyRate;
+    const wages = Number(row.wages || 0);
+    const effectiveRate = row.hours > 0 ? wages / row.hours : employee.hourlyRate;
     return {
       ...row,
       employeeName: employee.name,
-      hourlyRate: employee.hourlyRate,
+      hourlyRate: effectiveRate,
       wages,
       bonus: Number(bonus?.amount || 0),
       bonusNote: bonus?.note || "",
@@ -913,6 +946,7 @@ function employeeOptions(includeInactive = true) {
 }
 
 function renderTimeTracking() {
+  renderActiveEmployees();
   const clockSelect = $("#clockEmployeeSelect");
   const selectedClockEmployee = clockSelect.value;
   clockSelect.innerHTML = `<option value="">Mitarbeiter wählen …</option>${employeeOptions(false)}`;
@@ -929,7 +963,7 @@ function renderTimeTracking() {
   });
 
   renderClockStatus();
-  if (currentRole !== "admin") return;
+  if (!isAdminUser()) return;
   renderEmployeeAdministration();
   renderTimeAdministration();
 }
@@ -992,8 +1026,12 @@ function renderTimeAdministration() {
       <td>${escapeHtml(locationNameForTime(entry.locationId))}</td>
       <td>${formatDateTime(entry.clockIn)}</td><td class="${entry.clockOut ? "" : "time-open"}">${formatDateTime(entry.clockOut)}</td>
       <td class="numeric">${formatHours(hours)}</td>
-      <td><button class="danger-button delete-time-entry" data-id="${entry.id}">Löschen</button></td></tr>`;
+      <td><div class="time-row-actions">
+        <button class="secondary-button edit-time-entry" data-id="${entry.id}">Bearbeiten</button>
+        <button class="danger-button delete-time-entry" data-id="${entry.id}">Löschen</button>
+      </div></td></tr>`;
   }).join("") : `<tr><td colspan="6">Keine Stempelungen im gewählten Zeitraum.</td></tr>`;
+  $$(".edit-time-entry").forEach((button) => button.addEventListener("click", () => openTimeEntryEditor(button.dataset.id)));
   $$(".delete-time-entry").forEach((button) => button.addEventListener("click", () => removeTimeEntry(button.dataset.id)));
 
   const filteredBonuses = employeeBonuses.filter((bonus) => bonus.dateKey >= from && bonus.dateKey <= to);
@@ -1011,8 +1049,10 @@ async function clockEmployee(direction) {
       const openEntry = timeEntries.find((entry) => entry.employeeId === employeeId && !entry.clockOut);
       if (direction === "in") {
         if (openEntry) throw new Error("Mitarbeiter ist bereits eingestempelt");
+        const employee = employeeForTime(employeeId);
         timeEntries.unshift({
           id: uid("time"), employeeId, locationId: currentLocationId,
+          hourlyRate: Number(employee?.hourlyRate || 0),
           clockIn: new Date().toISOString(), clockOut: null
         });
       } else {
@@ -1062,7 +1102,27 @@ async function addEmployee(event) {
   }
 }
 
+function askRateRecalculation(employee, newRate) {
+  return new Promise((resolve) => {
+    const dialog = $("#rateChangeDialog");
+    $("#rateChangeMessage").textContent =
+      `Der Stundensatz von ${employee.name} wird von ${euro(employee.hourlyRate)} auf ${euro(newRate)} geändert. Sollen vergangene Stempelzeiten ebenfalls angepasst werden?`;
+    const finish = (answer) => {
+      dialog.close();
+      resolve(answer);
+    };
+    $("#rateChangeYesButton").onclick = () => finish(true);
+    $("#rateChangeNoButton").onclick = () => finish(false);
+    dialog.oncancel = (event) => {
+      event.preventDefault();
+      finish(false);
+    };
+    dialog.showModal();
+  });
+}
+
 async function saveExistingEmployee(row) {
+  const previousEmployee = employeeForTime(row.dataset.id);
   const employee = {
     id: row.dataset.id,
     name: row.querySelector(".employee-edit-name").value.trim(),
@@ -1074,13 +1134,22 @@ async function saveExistingEmployee(row) {
     showToast("Mitarbeitername ist bereits vorhanden");
     return;
   }
+  const rateChanged = previousEmployee && Math.abs(previousEmployee.hourlyRate - employee.hourlyRate) > 0.0001;
+  const recalculatePast = rateChanged ? await askRateRecalculation(previousEmployee, employee.hourlyRate) : false;
   try {
     if (localMode) {
       const index = employees.findIndex((item) => item.id === employee.id);
       employees[index] = employee;
+      if (recalculatePast) {
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - 2);
+        timeEntries.forEach((entry) => {
+          if (entry.employeeId === employee.id && new Date(entry.clockIn) >= cutoff) entry.hourlyRate = employee.hourlyRate;
+        });
+      }
       persistLocalTimeTracking();
     } else {
-      await CloudStore.saveEmployee(currentLocationId, employee);
+      await CloudStore.saveEmployee(currentLocationId, employee, recalculatePast);
       await reloadTimeTracking();
     }
     renderTimeTracking();
@@ -1092,9 +1161,10 @@ async function saveExistingEmployee(row) {
 
 async function addManualTimeEntry(event) {
   event.preventDefault();
-  const dateKey = $("#manualDateInput").value;
-  const start = new Date(`${dateKey}T${$("#manualStartInput").value}`);
-  const end = new Date(`${dateKey}T${$("#manualEndInput").value}`);
+  const startDateKey = $("#manualDateInput").value;
+  const endDateKey = $("#manualEndDateInput").value;
+  const start = new Date(`${startDateKey}T${$("#manualStartInput").value}`);
+  const end = new Date(`${endDateKey}T${$("#manualEndInput").value}`);
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
     showToast("Endzeit muss nach der Startzeit liegen");
     return;
@@ -1103,6 +1173,7 @@ async function addManualTimeEntry(event) {
     id: uid("time"),
     employeeId: $("#manualEmployeeSelect").value,
     locationId: currentLocationId,
+    hourlyRate: Number(employeeForTime($("#manualEmployeeSelect").value)?.hourlyRate || 0),
     clockIn: start.toISOString(),
     clockOut: end.toISOString()
   };
@@ -1118,6 +1189,70 @@ async function addManualTimeEntry(event) {
     showToast("Stempelzeit wurde hinzugefügt");
   } catch (error) {
     showToast(error.message || "Stempelzeit konnte nicht gespeichert werden");
+  }
+}
+
+function toDateTimeLocal(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const part = (number) => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}T${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`;
+}
+
+function openTimeEntryEditor(entryId) {
+  const entry = timeEntries.find((item) => item.id === entryId);
+  if (!entry || !isAdminUser()) return;
+  $("#timeEntryEditId").value = entry.id;
+  $("#timeEntryEmployeeInput").innerHTML = employeeOptions(true);
+  $("#timeEntryEmployeeInput").value = entry.employeeId;
+  $("#timeEntryLocationInput").innerHTML = locations.map((location) =>
+    `<option value="${location.id}">${escapeHtml(location.name)}</option>`
+  ).join("");
+  $("#timeEntryLocationInput").value = locations.some((location) => location.id === entry.locationId)
+    ? entry.locationId
+    : currentLocationId;
+  $("#timeEntryStartInput").value = toDateTimeLocal(entry.clockIn);
+  $("#timeEntryEndInput").value = toDateTimeLocal(entry.clockOut);
+  $("#timeEntryDialog").showModal();
+}
+
+async function saveEditedTimeEntry(event) {
+  event.preventDefault();
+  const existing = timeEntries.find((entry) => entry.id === $("#timeEntryEditId").value);
+  if (!existing) return;
+  const employeeId = $("#timeEntryEmployeeInput").value;
+  const start = new Date($("#timeEntryStartInput").value);
+  const endValue = $("#timeEntryEndInput").value;
+  const end = endValue ? new Date(endValue) : null;
+  if (!employeeId || !Number.isFinite(start.getTime()) || (end && (!Number.isFinite(end.getTime()) || end <= start))) {
+    showToast("Endzeit muss nach der Startzeit liegen");
+    return;
+  }
+  const entry = {
+    ...existing,
+    employeeId,
+    locationId: $("#timeEntryLocationInput").value,
+    hourlyRate: employeeId === existing.employeeId
+      ? Number(existing.hourlyRate ?? employeeForTime(employeeId)?.hourlyRate ?? 0)
+      : Number(employeeForTime(employeeId)?.hourlyRate || 0),
+    clockIn: start.toISOString(),
+    clockOut: end ? end.toISOString() : null
+  };
+  try {
+    if (localMode) {
+      const index = timeEntries.findIndex((item) => item.id === entry.id);
+      timeEntries[index] = entry;
+      persistLocalTimeTracking();
+    } else {
+      await CloudStore.updateTimeEntry(entry);
+      await reloadTimeTracking();
+    }
+    $("#timeEntryDialog").close();
+    renderTimeTracking();
+    showToast("Stempelzeit wurde aktualisiert");
+  } catch (error) {
+    showToast(error.message || "Stempelzeit konnte nicht aktualisiert werden");
   }
 }
 
@@ -1183,7 +1318,7 @@ async function removeBonus(bonusId) {
 }
 
 function exportTimeReport() {
-  if (currentRole !== "admin") return;
+  if (!isAdminUser()) return;
   const { from, to } = timeRange();
   const aggregated = aggregateTimeTracking();
   const detailRows = [];
@@ -1198,6 +1333,8 @@ function exportTimeReport() {
         clockInLabel: formatDateTime(entry.clockIn),
         clockOutLabel: formatDateTime(entry.clockOut),
         hours: segment.hours,
+        hourlyRate: Number(entry.hourlyRate ?? employeeForTime(entry.employeeId)?.hourlyRate ?? 0),
+        wages: segment.hours * Number(entry.hourlyRate ?? employeeForTime(entry.employeeId)?.hourlyRate ?? 0),
         open: !entry.clockOut
       });
     });
@@ -1219,7 +1356,7 @@ function setSettingsTab(tab) {
   $("#categoriesTab").classList.toggle("hidden", tab !== "categories");
   $("#productsTab").classList.toggle("hidden", tab !== "products");
   $("#generalTab").classList.toggle("hidden", tab !== "general");
-  if (tab === "general" && currentRole === "admin") reloadTimeTracking();
+  if (tab === "general" && isAdminUser()) reloadTimeTracking();
 }
 
 function renderSettings() {
@@ -1269,6 +1406,7 @@ function renderSettings() {
   setupCategoryDragAndDrop();
   $("#themeSelect").value = appSettings.theme || "dark";
   $("#billingEmailInput").value = appSettings.billingEmail || "";
+  $("#billingEmail2Input").value = appSettings.billingEmail2 || "";
   $("#currentUserLabel").textContent = localMode ? "Lokaler Testmodus" : (currentUserEmail || "Supabase-Konto aktiv");
   renderLocationAdministration();
   renderEmployeeAdministration();
@@ -1278,13 +1416,15 @@ function renderLocationAdministration() {
   const list = $("#locationAdminList");
   if (!list) return;
   list.innerHTML = locations.map((location) => {
-    const canDelete = locations.length > 1 && (localMode || location.role === "admin");
-    return `<div class="location-admin-row">
-      <strong>${escapeHtml(location.name)}</strong>
+    const canDelete = locations.length > 1 && isAdminUser();
+    return `<div class="location-admin-row" data-id="${location.id}">
+      <input class="location-edit-name" value="${escapeHtml(location.name)}" aria-label="Standortname">
       ${location.id === currentLocationId ? "<small>Aktuell</small>" : ""}
+      <button class="secondary-button save-location-name" data-id="${location.id}">Speichern</button>
       <button class="danger-button delete-location" data-id="${location.id}" ${canDelete ? "" : "disabled"}>Löschen</button>
     </div>`;
   }).join("");
+  $$(".save-location-name").forEach((button) => button.addEventListener("click", () => updateLocationName(button.dataset.id)));
   $$(".delete-location").forEach((button) => button.addEventListener("click", () => deleteLocation(button.dataset.id)));
 }
 
@@ -1466,6 +1606,26 @@ async function importExcelFile(file) {
   }
 }
 
+async function updateLocationName(locationId) {
+  const location = locations.find((entry) => entry.id === locationId);
+  const row = $(`.location-admin-row[data-id="${locationId}"]`);
+  const name = row?.querySelector(".location-edit-name")?.value.trim();
+  if (!location || !name || name === location.name) return;
+  try {
+    if (localMode) {
+      location.name = name;
+      localStorage.setItem("kassenraum-local-locations", JSON.stringify(locations));
+    } else {
+      await CloudStore.updateLocation(locationId, name);
+      locations = await CloudStore.locations();
+    }
+    renderAll();
+    showToast("Standortname wurde gespeichert");
+  } catch (error) {
+    showToast(error.message || "Standortname konnte nicht gespeichert werden");
+  }
+}
+
 async function deleteLocation(locationId) {
   const location = locations.find((entry) => entry.id === locationId);
   if (!location || locations.length < 2) {
@@ -1580,6 +1740,11 @@ $("#billingEmailInput").addEventListener("change", (event) => {
   persist();
   showToast("Abrechnungs-E-Mail gespeichert");
 });
+$("#billingEmail2Input").addEventListener("change", (event) => {
+  appSettings.billingEmail2 = event.target.value.trim();
+  persist();
+  showToast("Zweite Abrechnungs-E-Mail gespeichert");
+});
 $("#createLocationButton").addEventListener("click", async (event) => {
   event.preventDefault();
   const name = $("#newLocationInput").value.trim();
@@ -1617,6 +1782,9 @@ $("#topLogoutButton").addEventListener("click", logout);
 $("#editorForm").addEventListener("submit", saveEditor);
 $("#dialogClose").addEventListener("click", () => $("#editorDialog").close());
 $("#dialogCancel").addEventListener("click", () => $("#editorDialog").close());
+$("#timeEntryEditForm").addEventListener("submit", saveEditedTimeEntry);
+$("#timeEntryDialogClose").addEventListener("click", () => $("#timeEntryDialog").close());
+$("#timeEntryDialogCancel").addEventListener("click", () => $("#timeEntryDialog").close());
 $("#clearCartButton").addEventListener("click", () => { cart = []; renderCart(); });
 $("#checkoutButton").addEventListener("click", openPaymentDialog);
 $("#paymentAmountInput").addEventListener("input", updatePaymentChange);

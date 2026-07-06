@@ -79,6 +79,14 @@ body[data-theme="light"] .cart-footer { background: #fbfaf6; }
 .icon-button svg { width: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; }
 .logout-topbar:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 18%, var(--white)); color: var(--danger); transform: none; }
 
+.active-employees-bar { min-height: 44px; padding: 7px 24px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--green) 8%, var(--panel)); }
+.active-employees-bar > strong { flex: 0 0 auto; color: var(--green); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+.active-employees-list { min-width: 0; display: flex; align-items: center; gap: 7px; overflow-x: auto; scrollbar-width: thin; }
+.active-employee-chip { flex: 0 0 auto; padding: 6px 10px; border: 1px solid color-mix(in srgb, var(--green) 35%, var(--line)); border-radius: 999px; background: var(--white); font-size: 11px; white-space: nowrap; }
+.active-employee-chip strong { color: var(--ink); }
+.active-employee-chip span { margin-left: 5px; color: var(--muted); }
+.active-employees-bar:not(.hidden) + .pos-layout { height: calc(100vh - 118px); }
+
 .pos-layout { height: calc(100vh - 74px); display: grid; grid-template-columns: 190px minmax(390px, 1fr) 370px; overflow: hidden; }
 .category-panel { padding: 26px 15px; border-right: 1px solid var(--line); background: var(--panel); overflow-y: auto; }
 .section-heading { padding: 0 9px 14px; display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -175,6 +183,9 @@ dialog { color: var(--ink); }
 dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .editor-dialog { width: min(520px, calc(100% - 30px)); padding: 0; border: 0; border-radius: 18px; background: var(--white); box-shadow: 0 30px 80px rgba(0,0,0,.22); }
 .editor-dialog form { padding: 26px; }
+#rateChangeDialog { padding: 26px; }
+.dialog-message { margin: 20px 0 8px; color: var(--ink); line-height: 1.55; }
+.dialog-hint { margin: 0; color: var(--muted); font-size: 12px; }
 .dialog-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 26px; }
 .dialog-close { border: 0; background: transparent; color: var(--muted); font-size: 28px; line-height: 1; cursor: pointer; }
 .form-fields { display: flex; flex-direction: column; gap: 19px; }
@@ -268,8 +279,9 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .danger-button { padding: 10px 13px; border: 1px solid var(--danger); border-radius: 9px; background: transparent; color: var(--danger); cursor: pointer; font-weight: 700; }
 .location-admin-list { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
 .location-admin-row { display: flex; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
-.location-admin-row strong { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.location-admin-row input { min-width: 0; flex: 1; margin: 0; padding: 8px 9px; font-size: 13px; }
 .location-admin-row small { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.location-admin-row .secondary-button,
 .location-admin-row .danger-button { padding: 6px 9px; font-size: 11px; }
 .location-admin-row .danger-button:disabled { opacity: .35; cursor: not-allowed; }
 .employee-settings-card { grid-column: 1 / -1; }
@@ -316,6 +328,8 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .time-table td { padding: 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .time-table td.numeric, .time-table th.numeric { text-align: right; }
 .time-table .danger-button { padding: 5px 8px; font-size: 10px; }
+.time-table .secondary-button { padding: 5px 8px; font-size: 10px; }
+.time-row-actions { display: flex; gap: 6px; }
 .time-open { color: var(--green); font-weight: 700; }
 
 @media (min-width: 761px) and (max-width: 1100px) {
@@ -343,6 +357,9 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .date-chip { display: none; }
   .location-picker > span { display: none; }
   .location-picker select { max-width: 112px; }
+  .active-employees-bar { padding: 7px 15px; }
+  .active-employees-bar > strong { display: none; }
+  .active-employees-bar:not(.hidden) + .pos-layout,
   .pos-layout { height: auto; min-height: calc(100vh - 64px); display: block; overflow: visible; padding-bottom: 180px; }
   .pos-layout.cart-expanded { padding-bottom: min(56vh, 430px); }
   .category-panel { position: sticky; top: 0; z-index: 4; padding: 10px 13px; border: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }

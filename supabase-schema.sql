@@ -17,7 +17,7 @@ create table if not exists public.user_locations (
 create table if not exists public.location_state (
   location_id uuid primary key references public.locations(id) on delete cascade,
   data jsonb not null default '{"categories":[],"products":[]}'::jsonb,
-  settings jsonb not null default '{"theme":"dark","billingEmail":""}'::jsonb,
+  settings jsonb not null default '{"theme":"dark","billingEmail":"","billingEmail2":""}'::jsonb,
   updated_at timestamptz not null default now()
 );
 
@@ -52,6 +52,7 @@ create table if not exists public.time_entries (
   id uuid primary key default gen_random_uuid(),
   location_id uuid references public.locations(id) on delete set null,
   employee_id uuid not null references public.employees(id) on delete cascade,
+  hourly_rate numeric(10,2) not null default 0 check (hourly_rate >= 0),
   clock_in timestamptz not null,
   clock_out timestamptz,
   created_by uuid references auth.users(id) on delete set null default auth.uid(),
@@ -80,6 +81,16 @@ alter table public.employees add constraint employees_location_id_fkey foreign k
 alter table public.time_entries alter column location_id drop not null;
 alter table public.time_entries drop constraint if exists time_entries_location_id_fkey;
 alter table public.time_entries add constraint time_entries_location_id_fkey foreign key (location_id) references public.locations(id) on delete set null;
+alter table public.time_entries add column if not exists hourly_rate numeric(10,2);
+update public.time_entries entry
+set hourly_rate = employee.hourly_rate
+from public.employees employee
+where employee.id = entry.employee_id
+  and entry.hourly_rate is null;
+alter table public.time_entries alter column hourly_rate set default 0;
+alter table public.time_entries alter column hourly_rate set not null;
+alter table public.time_entries drop constraint if exists time_entries_hourly_rate_check;
+alter table public.time_entries add constraint time_entries_hourly_rate_check check (hourly_rate >= 0);
 alter table public.employee_bonuses alter column location_id drop not null;
 alter table public.employee_bonuses drop constraint if exists employee_bonuses_location_id_fkey;
 alter table public.employee_bonuses add constraint employee_bonuses_location_id_fkey foreign key (location_id) references public.locations(id) on delete set null;
@@ -170,7 +181,7 @@ as $$ select exists(select 1 from user_locations where user_id = auth.uid() and 
 
 create or replace function public.is_location_admin(target_location uuid)
 returns boolean language sql stable security definer set search_path = public
-as $$ select exists(select 1 from user_locations where user_id = auth.uid() and location_id = target_location and role = 'admin') $$;
+as $$ select exists(select 1 from user_locations where user_id = auth.uid() and role = 'admin') $$;
 
 create or replace function public.is_business_user()
 returns boolean language sql stable security definer set search_path = public
@@ -179,6 +190,16 @@ as $$ select exists(select 1 from user_locations where user_id = auth.uid()) $$;
 create or replace function public.is_any_admin()
 returns boolean language sql stable security definer set search_path = public
 as $$ select exists(select 1 from user_locations where user_id = auth.uid() and role = 'admin') $$;
+
+update public.user_locations membership
+set role = 'admin'
+where membership.role <> 'admin'
+  and exists (
+    select 1
+    from public.user_locations admin_membership
+    where admin_membership.user_id = membership.user_id
+      and admin_membership.role = 'admin'
+  );
 
 create or replace function public.sync_location_memberships()
 returns integer language plpgsql security definer set search_path = public
@@ -280,8 +301,10 @@ begin
     raise exception 'Mitarbeiter ist bereits eingestempelt';
   end if;
 
-  insert into time_entries (location_id, employee_id, clock_in, created_by)
-  values (target_location, target_employee, now(), auth.uid())
+  insert into time_entries (location_id, employee_id, hourly_rate, clock_in, created_by)
+  select target_location, employee.id, employee.hourly_rate, now(), auth.uid()
+  from employees employee
+  where employee.id = target_employee
   returning id into new_entry;
   return new_entry;
 end $$;
@@ -326,11 +349,13 @@ alter table public.employees enable row level security;
 alter table public.time_entries enable row level security;
 alter table public.employee_bonuses enable row level security;
 alter table public.user_locations replica identity full;
+alter table public.locations replica identity full;
 alter table public.employees replica identity full;
 alter table public.time_entries replica identity full;
 alter table public.employee_bonuses replica identity full;
 
 drop policy if exists "members read locations" on public.locations;
+drop policy if exists "admins update locations" on public.locations;
 drop policy if exists "users read memberships" on public.user_locations;
 drop policy if exists "members read state" on public.location_state;
 drop policy if exists "admins insert state" on public.location_state;
@@ -357,6 +382,7 @@ drop policy if exists "admins update bonuses" on public.employee_bonuses;
 drop policy if exists "admins delete bonuses" on public.employee_bonuses;
 
 create policy "members read locations" on public.locations for select using (is_location_member(id));
+create policy "admins update locations" on public.locations for update using (is_any_admin()) with check (is_any_admin());
 create policy "users read memberships" on public.user_locations for select using (user_id = auth.uid() or is_location_admin(location_id));
 create policy "members read state" on public.location_state for select using (is_location_member(location_id));
 create policy "admins insert state" on public.location_state for insert with check (is_location_admin(location_id));
@@ -403,6 +429,12 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.user_locations;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.locations;
 exception when duplicate_object then null;
 end $$;
 

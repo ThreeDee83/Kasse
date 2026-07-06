@@ -104,6 +104,11 @@
     if (error) throw error;
   }
 
+  async function updateLocation(locationId, name) {
+    const { error } = await client.from("locations").update({ name }).eq("id", locationId);
+    if (error) throw error;
+  }
+
   function saveCatalogToLocations(locationIds, data) {
     return queued({ type: "catalog", locationIds, data });
   }
@@ -179,7 +184,7 @@
     return data;
   }
 
-  async function saveEmployee(locationId, employee) {
+  async function saveEmployee(locationId, employee, recalculatePast = false) {
     const values = {
       name: employee.name,
       hourly_rate: employee.hourlyRate,
@@ -190,15 +195,37 @@
       : client.from("employees").insert({ ...values, location_id: locationId });
     const { error } = await query;
     if (error) throw error;
+    if (employee.id && recalculatePast) {
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - 2);
+      const { error: rateError } = await client
+        .from("time_entries")
+        .update({ hourly_rate: employee.hourlyRate })
+        .eq("employee_id", employee.id)
+        .gte("clock_in", cutoff.toISOString());
+      if (rateError) throw rateError;
+    }
   }
 
   async function addTimeEntry(locationId, entry) {
     const { error } = await client.from("time_entries").insert({
       location_id: locationId,
       employee_id: entry.employeeId,
+      hourly_rate: entry.hourlyRate,
       clock_in: entry.clockIn,
       clock_out: entry.clockOut
     });
+    if (error) throw error;
+  }
+
+  async function updateTimeEntry(entry) {
+    const { error } = await client.from("time_entries").update({
+      location_id: entry.locationId,
+      employee_id: entry.employeeId,
+      hourly_rate: entry.hourlyRate,
+      clock_in: entry.clockIn,
+      clock_out: entry.clockOut
+    }).eq("id", entry.id);
     if (error) throw error;
   }
 
@@ -230,6 +257,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "sales", filter: `location_id=eq.${locationId}` }, callback)
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_balances", filter: `location_id=eq.${locationId}` }, callback)
       .on("postgres_changes", { event: "*", schema: "public", table: "user_locations", filter: `user_id=eq.${userId}` }, membershipCallback)
+      .on("postgres_changes", { event: "*", schema: "public", table: "locations" }, membershipCallback)
       .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, timeCallback)
       .on("postgres_changes", { event: "*", schema: "public", table: "time_entries" }, timeCallback)
       .on("postgres_changes", { event: "*", schema: "public", table: "employee_bonuses" }, timeCallback)
@@ -237,9 +265,9 @@
   }
 
   global.CloudStore = {
-    configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, loadLocation,
+    configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, updateLocation, loadLocation,
     saveState, saveCatalogToLocations, insertSale, saveCash, deleteCash, deleteSales,
-    loadTimeTracking, clockIn, clockOut, saveEmployee, addTimeEntry, deleteTimeEntry, saveBonus, deleteBonus,
+    loadTimeTracking, clockIn, clockOut, saveEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus,
     subscribe, flushQueue
   };
   global.addEventListener("online", flushQueue);
