@@ -241,5 +241,108 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  global.XlsxExport = { createWorkbook, downloadWorkbook };
+  function styleSheet(sheet, widths, currencyColumns = [], decimalColumns = []) {
+    sheet["!cols"] = widths.map((width) => ({ wch: width }));
+    const range = XLSX.utils.decode_range(sheet["!ref"]);
+    for (let column = range.s.c; column <= range.e.c; column += 1) {
+      const cell = sheet[XLSX.utils.encode_cell({ r: 0, c: column })];
+      if (cell) {
+        cell.s = {
+          font: { bold: true, color: { rgb: "FFFFFFFF" } },
+          fill: { patternType: "solid", fgColor: { rgb: "FF19745F" } },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: { bottom: { style: "thin", color: { rgb: "FFB7C9C3" } } }
+        };
+      }
+    }
+    for (let row = 1; row <= range.e.r; row += 1) {
+      currencyColumns.forEach((column) => {
+        const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })];
+        if (cell) cell.z = '#,##0.00 [$€-407]';
+      });
+      decimalColumns.forEach((column) => {
+        const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })];
+        if (cell) cell.z = "0.00";
+      });
+    }
+    sheet["!autofilter"] = { ref: XLSX.utils.encode_range({ r: 0, c: 0 }, { r: Math.max(range.e.r - 1, 0), c: range.e.c }) };
+    sheet["!freeze"] = { xSplit: 0, ySplit: 1, topLeftCell: "A2", activePane: "bottomLeft", state: "frozen" };
+  }
+
+  function createTimeWorkbook(payload) {
+    if (!global.XLSX) throw new Error("Excel-Bibliothek ist nicht verfügbar.");
+    const dailyRows = payload.dailyRows || [];
+    const employeeRows = payload.employeeRows || [];
+    const detailRows = payload.detailRows || [];
+    const workbook = XLSX.utils.book_new();
+
+    const details = [["Datum", "Mitarbeiter", "Standort", "Eingestempelt", "Ausgestempelt", "Stunden", "Status"]];
+    detailRows.forEach((row) => details.push([
+      row.dateLabel, row.employeeName, row.locationName, row.clockInLabel, row.clockOutLabel, row.hours, row.open ? "Offen" : "Abgeschlossen"
+    ]));
+    const detailSheet = XLSX.utils.aoa_to_sheet(details);
+    styleSheet(detailSheet, [14, 24, 20, 21, 21, 12, 15], [], [5]);
+    XLSX.utils.book_append_sheet(workbook, detailSheet, "Stempelzeiten");
+
+    const detailLastRow = Math.max(detailRows.length + 1, 2);
+    const daily = [["Datum", "Mitarbeiter", "Stunden", "Stundensatz", "Grundlohn", "Bonus", "Gesamt", "Bonusnotiz"]];
+    dailyRows.forEach((row, index) => {
+      const excelRow = index + 2;
+      daily.push([
+        row.dateLabel,
+        row.employeeName,
+        { t: "n", f: `SUMIFS('Stempelzeiten'!$F$2:$F$${detailLastRow},'Stempelzeiten'!$A$2:$A$${detailLastRow},A${excelRow},'Stempelzeiten'!$B$2:$B$${detailLastRow},B${excelRow})`, v: row.hours },
+        row.hourlyRate,
+        { t: "n", f: `C${excelRow}*D${excelRow}`, v: row.wages },
+        row.bonus,
+        { t: "n", f: `E${excelRow}+F${excelRow}`, v: row.total },
+        row.bonusNote
+      ]);
+    });
+    const dailySheet = XLSX.utils.aoa_to_sheet(daily);
+    styleSheet(dailySheet, [14, 24, 12, 15, 15, 14, 15, 30], [3, 4, 5, 6], [2]);
+    XLSX.utils.book_append_sheet(workbook, dailySheet, "Tagesabrechnung");
+
+    const dailyLastRow = Math.max(dailyRows.length + 1, 2);
+    const employeeSummary = [["Mitarbeiter", "Gesamtstunden", "Grundlohn", "Bonus", "Gesamtsumme"]];
+    employeeRows.forEach((row, index) => {
+      const excelRow = index + 2;
+      employeeSummary.push([
+        row.employeeName,
+        { t: "n", f: `SUMIF('Tagesabrechnung'!$B$2:$B$${dailyLastRow},A${excelRow},'Tagesabrechnung'!$C$2:$C$${dailyLastRow})`, v: row.hours },
+        { t: "n", f: `SUMIF('Tagesabrechnung'!$B$2:$B$${dailyLastRow},A${excelRow},'Tagesabrechnung'!$E$2:$E$${dailyLastRow})`, v: row.wages },
+        { t: "n", f: `SUMIF('Tagesabrechnung'!$B$2:$B$${dailyLastRow},A${excelRow},'Tagesabrechnung'!$F$2:$F$${dailyLastRow})`, v: row.bonus },
+        { t: "n", f: `C${excelRow}+D${excelRow}`, v: row.total }
+      ]);
+    });
+    const employeeTotalFormula = (column) => employeeRows.length ? `SUM(${column}2:${column}${employeeRows.length + 1})` : "0";
+    employeeSummary.push([
+      "Gesamt",
+      { t: "n", f: employeeTotalFormula("B"), v: payload.totals?.hours || 0 },
+      { t: "n", f: employeeTotalFormula("C"), v: payload.totals?.wages || 0 },
+      { t: "n", f: employeeTotalFormula("D"), v: payload.totals?.bonus || 0 },
+      { t: "n", f: employeeTotalFormula("E"), v: payload.totals?.total || 0 }
+    ]);
+    employeeSummary.push(["Standort", payload.locationName, "", "", ""]);
+    employeeSummary.push(["Zeitraum", payload.periodLabel, "", "", ""]);
+    const summarySheet = XLSX.utils.aoa_to_sheet(employeeSummary);
+    styleSheet(summarySheet, [25, 17, 17, 15, 18], [2, 3, 4], [1]);
+    XLSX.utils.book_append_sheet(workbook, summarySheet, "Mitarbeitersummen");
+
+    workbook.Props = {
+      Title: `Arbeitszeitabrechnung ${payload.periodLabel}`,
+      Subject: payload.locationName,
+      Author: "Kassenraum",
+      CreatedDate: new Date()
+    };
+    workbook.SheetNames = ["Mitarbeitersummen", "Tagesabrechnung", "Stempelzeiten"];
+    return workbook;
+  }
+
+  function downloadTimeWorkbook(payload, filename) {
+    const workbook = createTimeWorkbook(payload);
+    XLSX.writeFile(workbook, filename, { compression: true, cellStyles: true });
+  }
+
+  global.XlsxExport = { createWorkbook, downloadWorkbook, createTimeWorkbook, downloadTimeWorkbook };
 })(globalThis);

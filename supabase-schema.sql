@@ -38,6 +38,132 @@ create table if not exists public.cash_balances (
   primary key (location_id, date_key)
 );
 
+create table if not exists public.employees (
+  id uuid primary key default gen_random_uuid(),
+  location_id uuid references public.locations(id) on delete set null,
+  name text not null,
+  hourly_rate numeric(10,2) not null default 0 check (hourly_rate >= 0),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (location_id, name)
+);
+
+create table if not exists public.time_entries (
+  id uuid primary key default gen_random_uuid(),
+  location_id uuid references public.locations(id) on delete set null,
+  employee_id uuid not null references public.employees(id) on delete cascade,
+  clock_in timestamptz not null,
+  clock_out timestamptz,
+  created_by uuid references auth.users(id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now(),
+  check (clock_out is null or clock_out > clock_in)
+);
+
+create unique index if not exists one_open_time_entry_per_employee
+on public.time_entries (employee_id)
+where clock_out is null;
+
+create table if not exists public.employee_bonuses (
+  id uuid primary key default gen_random_uuid(),
+  location_id uuid references public.locations(id) on delete set null,
+  employee_id uuid not null references public.employees(id) on delete cascade,
+  date_key date not null,
+  amount numeric(10,2) not null default 0 check (amount >= 0),
+  note text not null default '',
+  created_at timestamptz not null default now(),
+  unique (employee_id, date_key)
+);
+
+alter table public.employees alter column location_id drop not null;
+alter table public.employees drop constraint if exists employees_location_id_fkey;
+alter table public.employees add constraint employees_location_id_fkey foreign key (location_id) references public.locations(id) on delete set null;
+alter table public.time_entries alter column location_id drop not null;
+alter table public.time_entries drop constraint if exists time_entries_location_id_fkey;
+alter table public.time_entries add constraint time_entries_location_id_fkey foreign key (location_id) references public.locations(id) on delete set null;
+alter table public.employee_bonuses alter column location_id drop not null;
+alter table public.employee_bonuses drop constraint if exists employee_bonuses_location_id_fkey;
+alter table public.employee_bonuses add constraint employee_bonuses_location_id_fkey foreign key (location_id) references public.locations(id) on delete set null;
+
+alter table public.employees drop constraint if exists employees_location_id_name_key;
+
+do $$
+declare
+  employee_group record;
+  duplicate_employee record;
+  duplicate_bonus record;
+  existing_bonus uuid;
+  newest_open_entry uuid;
+  newest_open_time timestamptz;
+begin
+  for employee_group in
+    select
+      lower(trim(name)) as normalized_name,
+      (array_agg(id order by created_at, id))[1] as keeper_id
+    from public.employees
+    group by lower(trim(name))
+    having count(*) > 1
+  loop
+    select entry.id, entry.clock_in
+      into newest_open_entry, newest_open_time
+    from public.time_entries entry
+    join public.employees employee on employee.id = entry.employee_id
+    where lower(trim(employee.name)) = employee_group.normalized_name
+      and entry.clock_out is null
+    order by entry.clock_in desc
+    limit 1;
+
+    if newest_open_entry is not null then
+      update public.time_entries entry
+      set clock_out = greatest(entry.clock_in + interval '1 second', newest_open_time)
+      from public.employees employee
+      where employee.id = entry.employee_id
+        and lower(trim(employee.name)) = employee_group.normalized_name
+        and entry.clock_out is null
+        and entry.id <> newest_open_entry;
+    end if;
+
+    for duplicate_employee in
+      select id
+      from public.employees
+      where lower(trim(name)) = employee_group.normalized_name
+        and id <> employee_group.keeper_id
+    loop
+      update public.time_entries
+      set employee_id = employee_group.keeper_id
+      where employee_id = duplicate_employee.id;
+
+      for duplicate_bonus in
+        select id, date_key, amount, note
+        from public.employee_bonuses
+        where employee_id = duplicate_employee.id
+      loop
+        select id into existing_bonus
+        from public.employee_bonuses
+        where employee_id = employee_group.keeper_id
+          and date_key = duplicate_bonus.date_key;
+
+        if existing_bonus is null then
+          update public.employee_bonuses
+          set employee_id = employee_group.keeper_id
+          where id = duplicate_bonus.id;
+        else
+          update public.employee_bonuses
+          set
+            amount = amount + duplicate_bonus.amount,
+            note = concat_ws(' · ', nullif(note, ''), nullif(duplicate_bonus.note, ''))
+          where id = existing_bonus;
+          delete from public.employee_bonuses where id = duplicate_bonus.id;
+        end if;
+      end loop;
+
+      delete from public.employees where id = duplicate_employee.id;
+    end loop;
+  end loop;
+end $$;
+
+create unique index if not exists employees_normalized_name_key
+on public.employees (lower(trim(name)));
+
 create or replace function public.is_location_member(target_location uuid)
 returns boolean language sql stable security definer set search_path = public
 as $$ select exists(select 1 from user_locations where user_id = auth.uid() and location_id = target_location) $$;
@@ -45,6 +171,14 @@ as $$ select exists(select 1 from user_locations where user_id = auth.uid() and 
 create or replace function public.is_location_admin(target_location uuid)
 returns boolean language sql stable security definer set search_path = public
 as $$ select exists(select 1 from user_locations where user_id = auth.uid() and location_id = target_location and role = 'admin') $$;
+
+create or replace function public.is_business_user()
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists(select 1 from user_locations where user_id = auth.uid()) $$;
+
+create or replace function public.is_any_admin()
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists(select 1 from user_locations where user_id = auth.uid() and role = 'admin') $$;
 
 create or replace function public.sync_location_memberships()
 returns integer language plpgsql security definer set search_path = public
@@ -108,17 +242,93 @@ begin
   return new_id;
 end $$;
 
+create or replace function public.delete_location(target_location uuid)
+returns void language plpgsql security definer set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.is_location_admin(target_location) then
+    raise exception 'Admin role required';
+  end if;
+  if not exists (
+    select 1
+    from user_locations
+    where user_id = auth.uid() and location_id <> target_location
+  ) then
+    raise exception 'Der letzte Standort kann nicht gelöscht werden';
+  end if;
+
+  delete from locations where id = target_location;
+end $$;
+
+drop function if exists public.clock_in_employee(uuid);
+
+create or replace function public.clock_in_employee(target_employee uuid, target_location uuid)
+returns uuid language plpgsql security definer set search_path = public
+as $$
+declare
+  new_entry uuid;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.is_location_member(target_location) then
+    raise exception 'Standortzugriff erforderlich';
+  end if;
+  if not exists (select 1 from employees where id = target_employee and active = true) then
+    raise exception 'Mitarbeiter nicht verfügbar';
+  end if;
+  if exists (select 1 from time_entries where employee_id = target_employee and clock_out is null) then
+    raise exception 'Mitarbeiter ist bereits eingestempelt';
+  end if;
+
+  insert into time_entries (location_id, employee_id, clock_in, created_by)
+  values (target_location, target_employee, now(), auth.uid())
+  returning id into new_entry;
+  return new_entry;
+end $$;
+
+create or replace function public.clock_out_employee(target_employee uuid)
+returns uuid language plpgsql security definer set search_path = public
+as $$
+declare
+  open_entry uuid;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not public.is_business_user() then raise exception 'Kein Standortzugriff'; end if;
+  if not exists (select 1 from employees where id = target_employee) then raise exception 'Mitarbeiter nicht verfügbar'; end if;
+  select id into open_entry
+  from time_entries
+  where employee_id = target_employee and clock_out is null
+  order by clock_in desc
+  limit 1;
+  if open_entry is null then raise exception 'Mitarbeiter ist nicht eingestempelt'; end if;
+
+  update time_entries set clock_out = now() where id = open_entry;
+  return open_entry;
+end $$;
+
 revoke all on function public.create_location(text) from public;
+revoke all on function public.delete_location(uuid) from public;
 revoke all on function public.sync_location_memberships() from public;
+revoke all on function public.clock_in_employee(uuid, uuid) from public;
+revoke all on function public.clock_out_employee(uuid) from public;
 grant execute on function public.create_location(text) to authenticated;
+grant execute on function public.delete_location(uuid) to authenticated;
 grant execute on function public.sync_location_memberships() to authenticated;
+grant execute on function public.clock_in_employee(uuid, uuid) to authenticated;
+grant execute on function public.clock_out_employee(uuid) to authenticated;
 
 alter table public.locations enable row level security;
 alter table public.user_locations enable row level security;
 alter table public.location_state enable row level security;
 alter table public.sales enable row level security;
 alter table public.cash_balances enable row level security;
+alter table public.employees enable row level security;
+alter table public.time_entries enable row level security;
+alter table public.employee_bonuses enable row level security;
 alter table public.user_locations replica identity full;
+alter table public.employees replica identity full;
+alter table public.time_entries replica identity full;
+alter table public.employee_bonuses replica identity full;
 
 drop policy if exists "members read locations" on public.locations;
 drop policy if exists "users read memberships" on public.user_locations;
@@ -133,6 +343,18 @@ drop policy if exists "members read cash" on public.cash_balances;
 drop policy if exists "members insert cash" on public.cash_balances;
 drop policy if exists "members update cash" on public.cash_balances;
 drop policy if exists "admins delete cash" on public.cash_balances;
+drop policy if exists "members read employees" on public.employees;
+drop policy if exists "admins insert employees" on public.employees;
+drop policy if exists "admins update employees" on public.employees;
+drop policy if exists "admins delete employees" on public.employees;
+drop policy if exists "members read time entries" on public.time_entries;
+drop policy if exists "admins insert time entries" on public.time_entries;
+drop policy if exists "admins update time entries" on public.time_entries;
+drop policy if exists "admins delete time entries" on public.time_entries;
+drop policy if exists "admins read bonuses" on public.employee_bonuses;
+drop policy if exists "admins insert bonuses" on public.employee_bonuses;
+drop policy if exists "admins update bonuses" on public.employee_bonuses;
+drop policy if exists "admins delete bonuses" on public.employee_bonuses;
 
 create policy "members read locations" on public.locations for select using (is_location_member(id));
 create policy "users read memberships" on public.user_locations for select using (user_id = auth.uid() or is_location_admin(location_id));
@@ -147,6 +369,18 @@ create policy "members read cash" on public.cash_balances for select using (is_l
 create policy "members insert cash" on public.cash_balances for insert with check (is_location_member(location_id));
 create policy "members update cash" on public.cash_balances for update using (is_location_member(location_id));
 create policy "admins delete cash" on public.cash_balances for delete using (is_location_admin(location_id));
+create policy "members read employees" on public.employees for select using (is_business_user());
+create policy "admins insert employees" on public.employees for insert with check (is_any_admin());
+create policy "admins update employees" on public.employees for update using (is_any_admin()) with check (is_any_admin());
+create policy "admins delete employees" on public.employees for delete using (is_any_admin());
+create policy "members read time entries" on public.time_entries for select using (is_business_user());
+create policy "admins insert time entries" on public.time_entries for insert with check (is_any_admin());
+create policy "admins update time entries" on public.time_entries for update using (is_any_admin()) with check (is_any_admin());
+create policy "admins delete time entries" on public.time_entries for delete using (is_any_admin());
+create policy "admins read bonuses" on public.employee_bonuses for select using (is_any_admin());
+create policy "admins insert bonuses" on public.employee_bonuses for insert with check (is_any_admin());
+create policy "admins update bonuses" on public.employee_bonuses for update using (is_any_admin()) with check (is_any_admin());
+create policy "admins delete bonuses" on public.employee_bonuses for delete using (is_any_admin());
 
 do $$
 begin
@@ -169,5 +403,23 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.user_locations;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.employees;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.time_entries;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.employee_bonuses;
 exception when duplicate_object then null;
 end $$;

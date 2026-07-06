@@ -34,6 +34,12 @@
         balance: action.balance
       }, { onConflict: "location_id,date_key" });
     }
+    if (action.type === "catalog") {
+      return client
+        .from("location_state")
+        .update({ data: action.data, updated_at: new Date().toISOString() })
+        .in("location_id", action.locationIds);
+    }
   }
 
   async function queued(action) {
@@ -93,27 +99,13 @@
     return data;
   }
 
-  async function syncLocationMemberships() {
-    const { data, error } = await client.rpc("sync_location_memberships");
+  async function deleteLocation(locationId) {
+    const { error } = await client.rpc("delete_location", { target_location: locationId });
     if (error) throw error;
-    return data;
   }
 
-  async function manageUsers(action, payload = {}) {
-    if (!client) throw new Error("Supabase ist nicht konfiguriert.");
-    const { data, error } = await client.functions.invoke("manage-users", {
-      body: { action, ...payload }
-    });
-    if (error) {
-      let message = error.message || "Benutzerverwaltung fehlgeschlagen.";
-      try {
-        const details = await error.context?.json();
-        if (details?.error) message = details.error;
-      } catch (_) {}
-      throw new Error(message);
-    }
-    if (!data?.ok) throw new Error(data?.error || "Benutzerverwaltung fehlgeschlagen.");
-    return data;
+  function saveCatalogToLocations(locationIds, data) {
+    return queued({ type: "catalog", locationIds, data });
   }
 
   async function loadLocation(locationId) {
@@ -156,19 +148,99 @@
     if (cashError) throw cashError;
   }
 
-  function subscribe(locationId, callback, userId, membershipCallback) {
+  async function loadTimeTracking() {
+    const [employeesResult, entriesResult, bonusesResult] = await Promise.all([
+      client.from("employees").select("*").order("name"),
+      client.from("time_entries").select("*").order("clock_in", { ascending: false }),
+      client.from("employee_bonuses").select("*").order("date_key", { ascending: false })
+    ]);
+    if (employeesResult.error) throw employeesResult.error;
+    if (entriesResult.error) throw entriesResult.error;
+    if (bonusesResult.error && bonusesResult.error.code !== "42501") throw bonusesResult.error;
+    return {
+      employees: employeesResult.data || [],
+      timeEntries: entriesResult.data || [],
+      bonuses: bonusesResult.data || []
+    };
+  }
+
+  async function clockIn(employeeId, locationId) {
+    const { data, error } = await client.rpc("clock_in_employee", {
+      target_employee: employeeId,
+      target_location: locationId
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  async function clockOut(employeeId) {
+    const { data, error } = await client.rpc("clock_out_employee", { target_employee: employeeId });
+    if (error) throw error;
+    return data;
+  }
+
+  async function saveEmployee(locationId, employee) {
+    const values = {
+      name: employee.name,
+      hourly_rate: employee.hourlyRate,
+      active: employee.active
+    };
+    const query = employee.id
+      ? client.from("employees").update(values).eq("id", employee.id)
+      : client.from("employees").insert({ ...values, location_id: locationId });
+    const { error } = await query;
+    if (error) throw error;
+  }
+
+  async function addTimeEntry(locationId, entry) {
+    const { error } = await client.from("time_entries").insert({
+      location_id: locationId,
+      employee_id: entry.employeeId,
+      clock_in: entry.clockIn,
+      clock_out: entry.clockOut
+    });
+    if (error) throw error;
+  }
+
+  async function deleteTimeEntry(locationId, entryId) {
+    const { error } = await client.from("time_entries").delete().eq("id", entryId);
+    if (error) throw error;
+  }
+
+  async function saveBonus(locationId, bonus) {
+    const { error } = await client.from("employee_bonuses").upsert({
+      location_id: locationId,
+      employee_id: bonus.employeeId,
+      date_key: bonus.dateKey,
+      amount: bonus.amount,
+      note: bonus.note || ""
+    }, { onConflict: "employee_id,date_key" });
+    if (error) throw error;
+  }
+
+  async function deleteBonus(locationId, bonusId) {
+    const { error } = await client.from("employee_bonuses").delete().eq("id", bonusId);
+    if (error) throw error;
+  }
+
+  function subscribe(locationId, callback, userId, membershipCallback, timeCallback) {
     if (channel) client.removeChannel(channel);
     channel = client.channel(`location-${locationId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "location_state", filter: `location_id=eq.${locationId}` }, callback)
       .on("postgres_changes", { event: "*", schema: "public", table: "sales", filter: `location_id=eq.${locationId}` }, callback)
       .on("postgres_changes", { event: "*", schema: "public", table: "cash_balances", filter: `location_id=eq.${locationId}` }, callback)
       .on("postgres_changes", { event: "*", schema: "public", table: "user_locations", filter: `user_id=eq.${userId}` }, membershipCallback)
+      .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, timeCallback)
+      .on("postgres_changes", { event: "*", schema: "public", table: "time_entries" }, timeCallback)
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_bonuses" }, timeCallback)
       .subscribe();
   }
 
   global.CloudStore = {
-    configured, client, signIn, signOut, session, locations, createLocation, loadLocation,
-    syncLocationMemberships, manageUsers, saveState, insertSale, saveCash, deleteCash, deleteSales, subscribe, flushQueue
+    configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, loadLocation,
+    saveState, saveCatalogToLocations, insertSale, saveCash, deleteCash, deleteSales,
+    loadTimeTracking, clockIn, clockOut, saveEmployee, addTimeEntry, deleteTimeEntry, saveBonus, deleteBonus,
+    subscribe, flushQueue
   };
   global.addEventListener("online", flushQueue);
 })(globalThis);

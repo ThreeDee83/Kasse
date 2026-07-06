@@ -35,9 +35,9 @@ let currentRole = "admin";
 let currentUserId = "";
 let currentUserEmail = "";
 let localMode = false;
-let managedUsers = [];
-let managedUsersLoading = false;
-let managedUsersError = "";
+let employees = [];
+let timeEntries = [];
+let employeeBonuses = [];
 let cart = [];
 let selectedCategory = "all";
 let editor = { type: null, id: null, color: COLORS[0], copySourceId: null };
@@ -46,6 +46,7 @@ let pendingPaymentTotal = 0;
 let toastTimer;
 let cloudSaveTimer;
 let realtimeReloadTimer;
+let timeReloadTimer;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -105,6 +106,12 @@ function persistCashBalances() {
   localStorage.setItem(scopedKey("kassenraum-cash-balances"), JSON.stringify(cashBalances));
 }
 
+function persistLocalTimeTracking() {
+  localStorage.setItem("kassenraum-employees-global", JSON.stringify(employees));
+  localStorage.setItem("kassenraum-time-entries-global", JSON.stringify(timeEntries));
+  localStorage.setItem("kassenraum-employee-bonuses-global", JSON.stringify(employeeBonuses));
+}
+
 function categoryFor(id) {
   return data.categories.find((category) => category.id === id);
 }
@@ -123,6 +130,7 @@ function renderRoleAccess() {
   const isAdmin = currentRole === "admin";
   $("#settingsButton").classList.toggle("hidden", !isAdmin);
   $$(".open-settings").forEach((button) => button.classList.toggle("hidden", !isAdmin));
+  $$(".admin-only").forEach((element) => element.classList.toggle("hidden", !isAdmin));
   if (!isAdmin && !$("#settingsView").classList.contains("hidden")) {
     $("#settingsView").classList.add("hidden");
     $("#posView").classList.remove("hidden");
@@ -163,6 +171,17 @@ function loadLocalLocation(locationId) {
   sales = read("kassenraum-sales", []);
   cashBalances = read("kassenraum-cash-balances", {});
   appSettings = { theme: "dark", billingEmail: "", ...read("kassenraum-settings", {}) };
+  const readGlobal = (key, fallback) => {
+    try {
+      return JSON.parse(localStorage.getItem(key)) ?? fallback;
+    } catch (_) {
+      return fallback;
+    }
+  };
+  employees = readGlobal("kassenraum-employees-global", read("kassenraum-employees", []));
+  timeEntries = readGlobal("kassenraum-time-entries-global", read("kassenraum-time-entries", []))
+    .map((entry) => ({ ...entry, locationId: entry.locationId || locationId }));
+  employeeBonuses = readGlobal("kassenraum-employee-bonuses-global", read("kassenraum-employee-bonuses", []));
 }
 
 async function refreshLocationMemberships() {
@@ -192,6 +211,7 @@ async function switchLocation(locationId, background = false) {
   if (localMode) {
     loadLocalLocation(locationId);
     renderAll();
+    if (!$("#timeClockView").classList.contains("hidden")) renderTimeTracking();
     return;
   }
   try {
@@ -223,6 +243,12 @@ async function switchLocation(locationId, background = false) {
       () => {
         clearTimeout(realtimeReloadTimer);
         realtimeReloadTimer = setTimeout(refreshLocationMemberships, 350);
+      },
+      () => {
+        if (!$("#timeClockView").classList.contains("hidden")) {
+          clearTimeout(timeReloadTimer);
+          timeReloadTimer = setTimeout(reloadTimeTracking, 250);
+        }
       }
     );
     if (!background) showToast(`Standort: ${location.name}`);
@@ -232,6 +258,7 @@ async function switchLocation(locationId, background = false) {
   }
   selectedCategory = "all";
   renderAll();
+  if (!$("#timeClockView").classList.contains("hidden")) await reloadTimeTracking();
 }
 
 async function startCloudSession() {
@@ -384,6 +411,8 @@ function openSettings(tab = "categories") {
     return;
   }
   $("#posView").classList.add("hidden");
+  $("#reportsView").classList.add("hidden");
+  $("#timeClockView").classList.add("hidden");
   $("#settingsView").classList.remove("hidden");
   setSettingsTab(tab);
   renderSettings();
@@ -393,6 +422,7 @@ function openSettings(tab = "categories") {
 function closeSettings() {
   $("#settingsView").classList.add("hidden");
   $("#reportsView").classList.add("hidden");
+  $("#timeClockView").classList.add("hidden");
   $("#posView").classList.remove("hidden");
   renderAll();
 }
@@ -400,6 +430,7 @@ function closeSettings() {
 function openReports() {
   $("#posView").classList.add("hidden");
   $("#settingsView").classList.add("hidden");
+  $("#timeClockView").classList.add("hidden");
   $("#reportsView").classList.remove("hidden");
   reportFilter = "today";
   $("#reportDateInput").value = localDateKey(new Date());
@@ -726,12 +757,469 @@ async function emailReport() {
   }
 }
 
+function normalizeTimeTracking(remote) {
+  employees = (remote.employees || []).map((employee) => ({
+    id: employee.id,
+    name: employee.name,
+    hourlyRate: Number(employee.hourly_rate ?? employee.hourlyRate ?? 0),
+    active: employee.active !== false
+  }));
+  timeEntries = (remote.timeEntries || []).map((entry) => ({
+    id: entry.id,
+    employeeId: entry.employee_id || entry.employeeId,
+    locationId: entry.location_id || entry.locationId || null,
+    clockIn: entry.clock_in || entry.clockIn,
+    clockOut: entry.clock_out || entry.clockOut || null
+  }));
+  employeeBonuses = (remote.bonuses || []).map((bonus) => ({
+    id: bonus.id,
+    employeeId: bonus.employee_id || bonus.employeeId,
+    dateKey: bonus.date_key || bonus.dateKey,
+    amount: Number(bonus.amount || 0),
+    note: bonus.note || ""
+  }));
+}
+
+async function reloadTimeTracking() {
+  if (!localMode) {
+    try {
+      normalizeTimeTracking(await CloudStore.loadTimeTracking());
+    } catch (error) {
+      showToast(error.message || "Arbeitszeiten konnten nicht geladen werden");
+    }
+  }
+  renderTimeTracking();
+}
+
+async function openTimeClock() {
+  $("#posView").classList.add("hidden");
+  $("#settingsView").classList.add("hidden");
+  $("#reportsView").classList.add("hidden");
+  $("#timeClockView").classList.remove("hidden");
+  const today = localDateKey(new Date());
+  if (!$("#timeFromDate").value) $("#timeFromDate").value = `${today.slice(0, 8)}01`;
+  if (!$("#timeToDate").value) $("#timeToDate").value = today;
+  $("#manualDateInput").value = today;
+  $("#bonusDateInput").value = today;
+  renderRoleAccess();
+  await reloadTimeTracking();
+  window.scrollTo(0, 0);
+}
+
+function employeeForTime(id) {
+  return employees.find((employee) => employee.id === id);
+}
+
+function locationNameForTime(id) {
+  return locations.find((location) => location.id === id)?.name || "Gelöschter Standort";
+}
+
+function formatDateTime(value) {
+  if (!value) return "Offen";
+  return new Intl.DateTimeFormat("de-AT", {
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function formatHours(value) {
+  return `${new Intl.NumberFormat("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)} h`;
+}
+
+function timeRange() {
+  const today = localDateKey(new Date());
+  return {
+    from: $("#timeFromDate").value || `${today.slice(0, 8)}01`,
+    to: $("#timeToDate").value || today
+  };
+}
+
+function splitEntryByDay(entry) {
+  const start = new Date(entry.clockIn);
+  const end = entry.clockOut ? new Date(entry.clockOut) : new Date();
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return [];
+  const segments = [];
+  let cursor = new Date(start);
+  while (cursor < end) {
+    const nextDay = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+    const segmentEnd = end < nextDay ? end : nextDay;
+    segments.push({
+      dateKey: localDateKey(cursor),
+      hours: (segmentEnd - cursor) / 3600000
+    });
+    cursor = segmentEnd;
+  }
+  return segments;
+}
+
+function aggregateTimeTracking() {
+  const { from, to } = timeRange();
+  const dailyMap = new Map();
+  timeEntries.forEach((entry) => {
+    splitEntryByDay(entry).forEach((segment) => {
+      if (segment.dateKey < from || segment.dateKey > to) return;
+      const key = `${entry.employeeId}|${segment.dateKey}`;
+      const current = dailyMap.get(key) || { employeeId: entry.employeeId, dateKey: segment.dateKey, hours: 0 };
+      current.hours += segment.hours;
+      dailyMap.set(key, current);
+    });
+  });
+  employeeBonuses.forEach((bonus) => {
+    if (bonus.dateKey < from || bonus.dateKey > to) return;
+    const key = `${bonus.employeeId}|${bonus.dateKey}`;
+    if (!dailyMap.has(key)) dailyMap.set(key, { employeeId: bonus.employeeId, dateKey: bonus.dateKey, hours: 0 });
+  });
+
+  const dailyRows = [...dailyMap.values()].map((row) => {
+    const employee = employeeForTime(row.employeeId) || { name: "Unbekannt", hourlyRate: 0 };
+    const bonus = employeeBonuses.find((item) => item.employeeId === row.employeeId && item.dateKey === row.dateKey);
+    const wages = row.hours * employee.hourlyRate;
+    return {
+      ...row,
+      employeeName: employee.name,
+      hourlyRate: employee.hourlyRate,
+      wages,
+      bonus: Number(bonus?.amount || 0),
+      bonusNote: bonus?.note || "",
+      total: wages + Number(bonus?.amount || 0)
+    };
+  }).sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.employeeName.localeCompare(b.employeeName, "de"));
+
+  const employeeMap = new Map();
+  dailyRows.forEach((row) => {
+    const current = employeeMap.get(row.employeeId) || {
+      employeeId: row.employeeId, employeeName: row.employeeName, hours: 0, wages: 0, bonus: 0, total: 0
+    };
+    current.hours += row.hours;
+    current.wages += row.wages;
+    current.bonus += row.bonus;
+    current.total += row.total;
+    employeeMap.set(row.employeeId, current);
+  });
+  const employeeRows = [...employeeMap.values()].sort((a, b) => a.employeeName.localeCompare(b.employeeName, "de"));
+  const totals = employeeRows.reduce((sum, row) => ({
+    hours: sum.hours + row.hours,
+    wages: sum.wages + row.wages,
+    bonus: sum.bonus + row.bonus,
+    total: sum.total + row.total
+  }), { hours: 0, wages: 0, bonus: 0, total: 0 });
+  return { dailyRows, employeeRows, totals };
+}
+
+function employeeOptions(includeInactive = true) {
+  return employees
+    .filter((employee) => includeInactive || employee.active || timeEntries.some((entry) => entry.employeeId === employee.id && !entry.clockOut))
+    .map((employee) => `<option value="${employee.id}">${escapeHtml(employee.name)}</option>`)
+    .join("");
+}
+
+function renderTimeTracking() {
+  const clockSelect = $("#clockEmployeeSelect");
+  const selectedClockEmployee = clockSelect.value;
+  clockSelect.innerHTML = `<option value="">Mitarbeiter wählen …</option>${employeeOptions(false)}`;
+  if (employees.some((employee) => employee.id === selectedClockEmployee
+    && (employee.active || timeEntries.some((entry) => entry.employeeId === employee.id && !entry.clockOut)))) {
+    clockSelect.value = selectedClockEmployee;
+  }
+
+  ["manualEmployeeSelect", "bonusEmployeeSelect"].forEach((id) => {
+    const select = $(`#${id}`);
+    const selected = select.value;
+    select.innerHTML = `<option value="">Mitarbeiter wählen …</option>${employeeOptions(true)}`;
+    if (employees.some((employee) => employee.id === selected)) select.value = selected;
+  });
+
+  renderClockStatus();
+  if (currentRole !== "admin") return;
+  renderEmployeeAdministration();
+  renderTimeAdministration();
+}
+
+function renderClockStatus() {
+  const employeeId = $("#clockEmployeeSelect").value;
+  const employee = employeeForTime(employeeId);
+  const openEntry = timeEntries.find((entry) => entry.employeeId === employeeId && !entry.clockOut);
+  $("#clockInButton").classList.toggle("hidden", Boolean(openEntry));
+  $("#clockOutButton").classList.toggle("hidden", !openEntry);
+  $("#clockInButton").disabled = !employee;
+  $("#clockOutButton").disabled = !openEntry;
+  $("#clockStatusText").textContent = !employee
+    ? (employees.some((item) => item.active) ? "Bitte Namen auswählen." : "Noch keine aktiven Mitarbeiter angelegt.")
+    : openEntry
+      ? `Eingestempelt seit ${formatDateTime(openEntry.clockIn)}`
+      : "Aktuell nicht eingestempelt.";
+}
+
+function renderEmployeeAdministration() {
+  const list = $("#employeeAdminList");
+  list.innerHTML = employees.length ? employees.map((employee) => `
+    <div class="employee-admin-row" data-id="${employee.id}">
+      <label>Name<input class="employee-edit-name" value="${escapeHtml(employee.name)}"></label>
+      <label>Stundensatz (€)<input class="employee-edit-rate" type="number" min="0" step="0.01" value="${employee.hourlyRate.toFixed(2)}"></label>
+      <label class="employee-active"><input class="employee-edit-active" type="checkbox" ${employee.active ? "checked" : ""}> Aktiv</label>
+      <button class="secondary-button save-employee" type="button">Speichern</button>
+    </div>`).join("") : `<div class="list-empty">Noch keine Mitarbeiter vorhanden.</div>`;
+  $$(".save-employee").forEach((button) => button.addEventListener("click", () => saveExistingEmployee(button.closest(".employee-admin-row"))));
+}
+
+function renderTimeAdministration() {
+  const { from, to } = timeRange();
+  const { dailyRows, employeeRows, totals } = aggregateTimeTracking();
+  $("#timeTotalHours").textContent = formatHours(totals.hours);
+  $("#timeTotalWages").textContent = euro(totals.wages);
+  $("#timeTotalBonuses").textContent = euro(totals.bonus);
+  $("#timeTotalPay").textContent = euro(totals.total);
+
+  $("#dailyTimeTable").innerHTML = dailyRows.length ? dailyRows.map((row) => `
+    <tr><td>${escapeHtml(formatDateKey(row.dateKey))}</td><td>${escapeHtml(row.employeeName)}</td>
+    <td class="numeric">${formatHours(row.hours)}</td><td class="numeric">${euro(row.hourlyRate)}</td>
+    <td class="numeric">${euro(row.wages)}</td><td class="numeric" title="${escapeHtml(row.bonusNote)}">${euro(row.bonus)}</td>
+    <td class="numeric"><strong>${euro(row.total)}</strong></td></tr>`).join("")
+    : `<tr><td colspan="7">Keine Arbeitszeiten im gewählten Zeitraum.</td></tr>`;
+
+  $("#employeeTimeTotals").innerHTML = employeeRows.length ? employeeRows.map((row) => `
+    <tr><td>${escapeHtml(row.employeeName)}</td><td class="numeric">${formatHours(row.hours)}</td>
+    <td class="numeric">${euro(row.wages)}</td><td class="numeric">${euro(row.bonus)}</td>
+    <td class="numeric"><strong>${euro(row.total)}</strong></td></tr>`).join("")
+    : `<tr><td colspan="5">Keine Mitarbeitersummen vorhanden.</td></tr>`;
+
+  const filteredEntries = timeEntries.filter((entry) => {
+    const day = localDateKey(new Date(entry.clockIn));
+    return day >= from && day <= to;
+  });
+  $("#timeEntriesTable").innerHTML = filteredEntries.length ? filteredEntries.map((entry) => {
+    const hours = splitEntryByDay(entry).reduce((sum, segment) => sum + segment.hours, 0);
+    return `<tr><td>${escapeHtml(employeeForTime(entry.employeeId)?.name || "Unbekannt")}</td>
+      <td>${escapeHtml(locationNameForTime(entry.locationId))}</td>
+      <td>${formatDateTime(entry.clockIn)}</td><td class="${entry.clockOut ? "" : "time-open"}">${formatDateTime(entry.clockOut)}</td>
+      <td class="numeric">${formatHours(hours)}</td>
+      <td><button class="danger-button delete-time-entry" data-id="${entry.id}">Löschen</button></td></tr>`;
+  }).join("") : `<tr><td colspan="6">Keine Stempelungen im gewählten Zeitraum.</td></tr>`;
+  $$(".delete-time-entry").forEach((button) => button.addEventListener("click", () => removeTimeEntry(button.dataset.id)));
+
+  const filteredBonuses = employeeBonuses.filter((bonus) => bonus.dateKey >= from && bonus.dateKey <= to);
+  $("#bonusAdminList").innerHTML = filteredBonuses.length ? filteredBonuses.map((bonus) => `
+    <div class="bonus-admin-row"><span><strong>${escapeHtml(employeeForTime(bonus.employeeId)?.name || "Unbekannt")}</strong><br><small>${escapeHtml(formatDateKey(bonus.dateKey))}${bonus.note ? ` · ${escapeHtml(bonus.note)}` : ""}</small></span>
+    <strong>${euro(bonus.amount)}</strong><button class="danger-button delete-bonus" data-id="${bonus.id}">Löschen</button></div>`).join("") : "";
+  $$(".delete-bonus").forEach((button) => button.addEventListener("click", () => removeBonus(button.dataset.id)));
+}
+
+async function clockEmployee(direction) {
+  const employeeId = $("#clockEmployeeSelect").value;
+  if (!employeeId) return;
+  try {
+    if (localMode) {
+      const openEntry = timeEntries.find((entry) => entry.employeeId === employeeId && !entry.clockOut);
+      if (direction === "in") {
+        if (openEntry) throw new Error("Mitarbeiter ist bereits eingestempelt");
+        timeEntries.unshift({
+          id: uid("time"), employeeId, locationId: currentLocationId,
+          clockIn: new Date().toISOString(), clockOut: null
+        });
+      } else {
+        if (!openEntry) throw new Error("Mitarbeiter ist nicht eingestempelt");
+        openEntry.clockOut = new Date().toISOString();
+      }
+      persistLocalTimeTracking();
+    } else {
+      if (!navigator.onLine) throw new Error("Zum Stempeln ist eine Internetverbindung erforderlich.");
+      if (direction === "in") await CloudStore.clockIn(employeeId, currentLocationId);
+      else await CloudStore.clockOut(employeeId);
+      await reloadTimeTracking();
+    }
+    renderTimeTracking();
+    showToast(direction === "in" ? "Erfolgreich eingestempelt" : "Erfolgreich ausgestempelt");
+  } catch (error) {
+    showToast(error.message || "Stempeln fehlgeschlagen");
+  }
+}
+
+async function addEmployee(event) {
+  event.preventDefault();
+  const employee = {
+    name: $("#employeeNameInput").value.trim(),
+    hourlyRate: Number($("#employeeRateInput").value),
+    active: true
+  };
+  if (!employee.name || !Number.isFinite(employee.hourlyRate) || employee.hourlyRate < 0) return;
+  if (employees.some((item) => item.name.toLowerCase() === employee.name.toLowerCase())) {
+    showToast("Mitarbeitername ist bereits vorhanden");
+    return;
+  }
+  try {
+    if (localMode) {
+      employees.push({ ...employee, id: uid("employee") });
+      persistLocalTimeTracking();
+    } else {
+      await CloudStore.saveEmployee(currentLocationId, employee);
+      await reloadTimeTracking();
+    }
+    $("#addEmployeeForm").reset();
+    $("#employeeRateInput").value = "0";
+    renderTimeTracking();
+    showToast("Mitarbeiter wurde angelegt");
+  } catch (error) {
+    showToast(error.message || "Mitarbeiter konnte nicht angelegt werden");
+  }
+}
+
+async function saveExistingEmployee(row) {
+  const employee = {
+    id: row.dataset.id,
+    name: row.querySelector(".employee-edit-name").value.trim(),
+    hourlyRate: Number(row.querySelector(".employee-edit-rate").value),
+    active: row.querySelector(".employee-edit-active").checked
+  };
+  if (!employee.name || !Number.isFinite(employee.hourlyRate) || employee.hourlyRate < 0) return;
+  if (employees.some((item) => item.id !== employee.id && item.name.toLowerCase() === employee.name.toLowerCase())) {
+    showToast("Mitarbeitername ist bereits vorhanden");
+    return;
+  }
+  try {
+    if (localMode) {
+      const index = employees.findIndex((item) => item.id === employee.id);
+      employees[index] = employee;
+      persistLocalTimeTracking();
+    } else {
+      await CloudStore.saveEmployee(currentLocationId, employee);
+      await reloadTimeTracking();
+    }
+    renderTimeTracking();
+    showToast("Mitarbeiter gespeichert");
+  } catch (error) {
+    showToast(error.message || "Mitarbeiter konnte nicht gespeichert werden");
+  }
+}
+
+async function addManualTimeEntry(event) {
+  event.preventDefault();
+  const dateKey = $("#manualDateInput").value;
+  const start = new Date(`${dateKey}T${$("#manualStartInput").value}`);
+  const end = new Date(`${dateKey}T${$("#manualEndInput").value}`);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+    showToast("Endzeit muss nach der Startzeit liegen");
+    return;
+  }
+  const entry = {
+    id: uid("time"),
+    employeeId: $("#manualEmployeeSelect").value,
+    locationId: currentLocationId,
+    clockIn: start.toISOString(),
+    clockOut: end.toISOString()
+  };
+  try {
+    if (localMode) {
+      timeEntries.unshift(entry);
+      persistLocalTimeTracking();
+    } else {
+      await CloudStore.addTimeEntry(currentLocationId, entry);
+      await reloadTimeTracking();
+    }
+    renderTimeTracking();
+    showToast("Stempelzeit wurde hinzugefügt");
+  } catch (error) {
+    showToast(error.message || "Stempelzeit konnte nicht gespeichert werden");
+  }
+}
+
+async function removeTimeEntry(entryId) {
+  if (!confirm("Diese Stempelzeit wirklich löschen?")) return;
+  try {
+    if (localMode) {
+      timeEntries = timeEntries.filter((entry) => entry.id !== entryId);
+      persistLocalTimeTracking();
+    } else {
+      await CloudStore.deleteTimeEntry(currentLocationId, entryId);
+      await reloadTimeTracking();
+    }
+    renderTimeTracking();
+    showToast("Stempelzeit gelöscht");
+  } catch (error) {
+    showToast(error.message || "Stempelzeit konnte nicht gelöscht werden");
+  }
+}
+
+async function saveEmployeeBonus(event) {
+  event.preventDefault();
+  const bonus = {
+    id: uid("bonus"),
+    employeeId: $("#bonusEmployeeSelect").value,
+    dateKey: $("#bonusDateInput").value,
+    amount: Number($("#bonusAmountInput").value),
+    note: $("#bonusNoteInput").value.trim()
+  };
+  if (!bonus.employeeId || !bonus.dateKey || !Number.isFinite(bonus.amount) || bonus.amount < 0) return;
+  try {
+    if (localMode) {
+      const existing = employeeBonuses.find((item) => item.employeeId === bonus.employeeId && item.dateKey === bonus.dateKey);
+      if (existing) Object.assign(existing, bonus, { id: existing.id });
+      else employeeBonuses.push(bonus);
+      persistLocalTimeTracking();
+    } else {
+      await CloudStore.saveBonus(currentLocationId, bonus);
+      await reloadTimeTracking();
+    }
+    renderTimeTracking();
+    showToast("Tagesbonus gespeichert");
+  } catch (error) {
+    showToast(error.message || "Bonus konnte nicht gespeichert werden");
+  }
+}
+
+async function removeBonus(bonusId) {
+  if (!confirm("Diesen Tagesbonus wirklich löschen?")) return;
+  try {
+    if (localMode) {
+      employeeBonuses = employeeBonuses.filter((bonus) => bonus.id !== bonusId);
+      persistLocalTimeTracking();
+    } else {
+      await CloudStore.deleteBonus(currentLocationId, bonusId);
+      await reloadTimeTracking();
+    }
+    renderTimeTracking();
+    showToast("Bonus gelöscht");
+  } catch (error) {
+    showToast(error.message || "Bonus konnte nicht gelöscht werden");
+  }
+}
+
+function exportTimeReport() {
+  if (currentRole !== "admin") return;
+  const { from, to } = timeRange();
+  const aggregated = aggregateTimeTracking();
+  const detailRows = [];
+  timeEntries.forEach((entry) => {
+    const employeeName = employeeForTime(entry.employeeId)?.name || "Unbekannt";
+    splitEntryByDay(entry).forEach((segment) => {
+      if (segment.dateKey < from || segment.dateKey > to) return;
+      detailRows.push({
+        dateLabel: formatDateKey(segment.dateKey),
+        employeeName,
+        locationName: locationNameForTime(entry.locationId),
+        clockInLabel: formatDateTime(entry.clockIn),
+        clockOutLabel: formatDateTime(entry.clockOut),
+        hours: segment.hours,
+        open: !entry.clockOut
+      });
+    });
+  });
+  const payload = {
+    locationName: "Alle Standorte",
+    periodLabel: `${formatDateKey(from)} bis ${formatDateKey(to)}`,
+    dailyRows: aggregated.dailyRows.map((row) => ({ ...row, dateLabel: formatDateKey(row.dateKey) })),
+    employeeRows: aggregated.employeeRows,
+    detailRows,
+    totals: aggregated.totals
+  };
+  XlsxExport.downloadTimeWorkbook(payload, `Arbeitszeit_${from}_${to}.xlsx`);
+  showToast("Arbeitszeit-Excel wurde erstellt");
+}
+
 function setSettingsTab(tab) {
   $$(".settings-tab").forEach((button) => button.classList.toggle("active", button.dataset.tab === tab));
   $("#categoriesTab").classList.toggle("hidden", tab !== "categories");
   $("#productsTab").classList.toggle("hidden", tab !== "products");
   $("#generalTab").classList.toggle("hidden", tab !== "general");
-  if (tab === "general" && currentRole === "admin") loadManagedUsers();
+  if (tab === "general" && currentRole === "admin") reloadTimeTracking();
 }
 
 function renderSettings() {
@@ -782,175 +1270,22 @@ function renderSettings() {
   $("#themeSelect").value = appSettings.theme || "dark";
   $("#billingEmailInput").value = appSettings.billingEmail || "";
   $("#currentUserLabel").textContent = localMode ? "Lokaler Testmodus" : (currentUserEmail || "Supabase-Konto aktiv");
-  renderUserManagement();
+  renderLocationAdministration();
+  renderEmployeeAdministration();
 }
 
-function adminLocations() {
-  return locations.filter((location) => location.role === "admin");
-}
-
-function locationChecksHtml(selectedIds = [], prefix = "location", disabled = false) {
-  const selected = new Set(selectedIds);
-  return adminLocations().map((location) => {
-    const inputId = `${prefix}-${location.id}`;
-    return `<label class="location-check" for="${inputId}">
-      <input id="${inputId}" type="checkbox" value="${location.id}" ${selected.has(location.id) ? "checked" : ""} ${disabled ? "disabled" : ""}>
-      <span>${escapeHtml(location.name)}</span>
-    </label>`;
+function renderLocationAdministration() {
+  const list = $("#locationAdminList");
+  if (!list) return;
+  list.innerHTML = locations.map((location) => {
+    const canDelete = locations.length > 1 && (localMode || location.role === "admin");
+    return `<div class="location-admin-row">
+      <strong>${escapeHtml(location.name)}</strong>
+      ${location.id === currentLocationId ? "<small>Aktuell</small>" : ""}
+      <button class="danger-button delete-location" data-id="${location.id}" ${canDelete ? "" : "disabled"}>Löschen</button>
+    </div>`;
   }).join("");
-}
-
-function renderUserManagement() {
-  const createLocations = $("#newUserLocations");
-  const list = $("#managedUsersList");
-  if (!createLocations || !list) return;
-
-  const allAdminLocationIds = adminLocations().map((location) => location.id);
-  createLocations.innerHTML = locationChecksHtml(allAdminLocationIds, "new-user-location");
-
-  if (localMode) {
-    list.innerHTML = `<div class="list-empty">Benutzerverwaltung ist nur mit Supabase-Anmeldung verfügbar.</div>`;
-    $("#createUserForm").classList.add("hidden");
-    $("#refreshUsersButton").classList.add("hidden");
-    return;
-  }
-  $("#createUserForm").classList.remove("hidden");
-  $("#refreshUsersButton").classList.remove("hidden");
-
-  if (managedUsersLoading) {
-    list.innerHTML = `<div class="list-empty">Benutzer werden geladen …</div>`;
-    return;
-  }
-  if (managedUsersError) {
-    list.innerHTML = `<div class="list-empty">${escapeHtml(managedUsersError)}</div>`;
-    return;
-  }
-  if (!managedUsers.length) {
-    list.innerHTML = `<div class="list-empty">Noch keine Benutzer für deine Standorte vorhanden.</div>`;
-    return;
-  }
-
-  list.innerHTML = managedUsers.map((user) => {
-    const selectedIds = user.memberships.map((membership) => membership.locationId);
-    const role = user.memberships.some((membership) => membership.role === "admin") ? "admin" : "staff";
-    const disabled = user.isCurrentUser;
-    return `<article class="managed-user" data-user-id="${user.id}">
-      <div class="managed-user-header">
-        <span class="user-avatar">${escapeHtml(user.email.charAt(0).toUpperCase())}</span>
-        <div><strong>${escapeHtml(user.email)}</strong><small>${role === "admin" ? "Administrator" : "Staff"}</small></div>
-        ${disabled ? `<span class="current-user-badge">Du</span>` : ""}
-      </div>
-      <div class="managed-user-controls">
-        <label>Rolle
-          <select class="managed-user-role" ${disabled ? "disabled" : ""}>
-            <option value="staff" ${role === "staff" ? "selected" : ""}>Staff</option>
-            <option value="admin" ${role === "admin" ? "selected" : ""}>Administrator</option>
-          </select>
-        </label>
-        <div class="location-checks">${locationChecksHtml(selectedIds, `user-${user.id}`, disabled)}</div>
-        <div class="managed-user-actions">
-          <button class="secondary-button save-managed-user" type="button" ${disabled ? "disabled" : ""}>Speichern</button>
-          <button class="danger-button remove-managed-user" type="button" ${disabled ? "disabled" : ""}>Entfernen</button>
-        </div>
-      </div>
-    </article>`;
-  }).join("");
-
-  $$(".save-managed-user").forEach((button) => button.addEventListener("click", () => {
-    updateManagedUser(button.closest(".managed-user"));
-  }));
-  $$(".remove-managed-user").forEach((button) => button.addEventListener("click", () => {
-    removeManagedUser(button.closest(".managed-user"));
-  }));
-}
-
-async function loadManagedUsers() {
-  if (localMode || currentRole !== "admin" || managedUsersLoading) {
-    renderUserManagement();
-    return;
-  }
-  managedUsersLoading = true;
-  managedUsersError = "";
-  renderUserManagement();
-  try {
-    const result = await CloudStore.manageUsers("list");
-    managedUsers = result.users || [];
-  } catch (error) {
-    managedUsers = [];
-    managedUsersError = "Benutzerverwaltung nicht erreichbar. Ist die Edge Function veröffentlicht?";
-    showToast(error.message || "Benutzer konnten nicht geladen werden");
-  } finally {
-    managedUsersLoading = false;
-    renderUserManagement();
-  }
-}
-
-function selectedLocationIds(container) {
-  return $$(`#${container} input[type="checkbox"]:checked`).map((input) => input.value);
-}
-
-async function createManagedUser(event) {
-  event.preventDefault();
-  const button = $("#createUserButton");
-  const payload = {
-    email: $("#newUserEmail").value.trim(),
-    password: $("#newUserPassword").value,
-    role: $("#newUserRole").value,
-    locationIds: selectedLocationIds("newUserLocations")
-  };
-  if (!payload.locationIds.length) {
-    showToast("Mindestens einen Standort auswählen");
-    return;
-  }
-  button.disabled = true;
-  button.textContent = "Wird angelegt …";
-  try {
-    await CloudStore.manageUsers("create", payload);
-    $("#createUserForm").reset();
-    showToast("Benutzer wurde angelegt");
-    await loadManagedUsers();
-  } catch (error) {
-    showToast(error.message || "Benutzer konnte nicht angelegt werden");
-  } finally {
-    button.disabled = false;
-    button.textContent = "Benutzer anlegen";
-    renderUserManagement();
-  }
-}
-
-async function updateManagedUser(row) {
-  const userId = row?.dataset.userId;
-  if (!userId) return;
-  const locationIds = [...row.querySelectorAll('.location-check input:checked')].map((input) => input.value);
-  if (!locationIds.length) {
-    showToast("Mindestens einen Standort auswählen");
-    return;
-  }
-  try {
-    await CloudStore.manageUsers("update", {
-      userId,
-      role: row.querySelector(".managed-user-role").value,
-      locationIds
-    });
-    showToast("Benutzerzugriff gespeichert");
-    await loadManagedUsers();
-  } catch (error) {
-    showToast(error.message || "Benutzer konnte nicht gespeichert werden");
-  }
-}
-
-async function removeManagedUser(row) {
-  const userId = row?.dataset.userId;
-  const user = managedUsers.find((entry) => entry.id === userId);
-  if (!userId || !user) return;
-  if (!confirm(`${user.email} wirklich aus allen verwalteten Standorten entfernen?`)) return;
-  try {
-    await CloudStore.manageUsers("remove", { userId });
-    showToast("Benutzer wurde entfernt");
-    await loadManagedUsers();
-  } catch (error) {
-    showToast(error.message || "Benutzer konnte nicht entfernt werden");
-  }
+  $$(".delete-location").forEach((button) => button.addEventListener("click", () => deleteLocation(button.dataset.id)));
 }
 
 function setupCategoryDragAndDrop() {
@@ -1110,18 +1445,57 @@ async function importExcelFile(file) {
     });
   });
   if (!importedProducts.length) throw new Error("Keine gültigen Preise gefunden.");
-  if (!confirm(`${importedCategories.length} Kategorien und ${importedProducts.length} Artikel importieren? Das aktuelle Sortiment wird ersetzt.`)) return;
+  if (!confirm(`${importedCategories.length} Kategorien und ${importedProducts.length} Artikel importieren? Das Sortiment wird an allen Standorten ersetzt.`)) return;
   data = { categories: importedCategories, products: importedProducts };
-  persist();
-  renderAll();
-  if (!localMode && currentLocationId !== "local") {
-    clearTimeout(cloudSaveTimer);
-    const result = await CloudStore.saveState(currentLocationId, data, appSettings);
-    showToast(result?.queued
-      ? "Excel-Sortiment lokal gespeichert – Synchronisierung folgt automatisch"
-      : "Excel-Sortiment wurde für alle Benutzer übernommen");
+  clearTimeout(cloudSaveTimer);
+  if (localMode) {
+    locations.forEach((location) => {
+      const key = location.id === "local" ? "kassenraum-data" : `kassenraum-data:${location.id}`;
+      localStorage.setItem(key, JSON.stringify(data));
+    });
+    renderAll();
+    showToast(`Excel-Sortiment wurde für alle ${locations.length} Standorte übernommen`);
   } else {
-    showToast("Excel-Sortiment wurde importiert");
+    const locationIds = locations.filter((location) => location.role === "admin").map((location) => location.id);
+    const result = await CloudStore.saveCatalogToLocations(locationIds, data);
+    localStorage.setItem(scopedKey("kassenraum-data"), JSON.stringify(data));
+    renderAll();
+    showToast(result?.queued
+      ? "Excel-Sortiment gespeichert – alle Standorte werden nach Verbindung synchronisiert"
+      : `Excel-Sortiment wurde für alle Benutzer an ${locationIds.length} Standorten übernommen`);
+  }
+}
+
+async function deleteLocation(locationId) {
+  const location = locations.find((entry) => entry.id === locationId);
+  if (!location || locations.length < 2) {
+    showToast("Der letzte Standort kann nicht gelöscht werden");
+    return;
+  }
+  if (!confirm(`Standort „${location.name}“ wirklich löschen? Sortiment, Umsätze und Kassenstände dieses Standorts werden unwiderruflich entfernt.`)) return;
+
+  try {
+    if (localMode) {
+      const storageBases = [
+        "kassenraum-data", "kassenraum-settings", "kassenraum-sales", "kassenraum-cash-balances",
+        "kassenraum-employees", "kassenraum-time-entries", "kassenraum-employee-bonuses"
+      ];
+      storageBases.forEach((base) => localStorage.removeItem(locationId === "local" ? base : `${base}:${locationId}`));
+      locations = locations.filter((entry) => entry.id !== locationId);
+      localStorage.setItem("kassenraum-local-locations", JSON.stringify(locations));
+    } else {
+      await CloudStore.deleteLocation(locationId);
+      locations = await CloudStore.locations();
+    }
+
+    if (currentLocationId === locationId) {
+      await switchLocation(locations[0].id);
+    } else {
+      renderAll();
+    }
+    showToast("Standort wurde gelöscht");
+  } catch (error) {
+    showToast(error.message || "Standort konnte nicht gelöscht werden");
   }
 }
 
@@ -1150,11 +1524,10 @@ async function logout() {
   localMode = false;
   currentUserId = "";
   currentUserEmail = "";
-  managedUsers = [];
-  managedUsersError = "";
   $("#appShell").classList.add("hidden");
   $("#settingsView").classList.add("hidden");
   $("#reportsView").classList.add("hidden");
+  $("#timeClockView").classList.add("hidden");
   $("#posView").classList.remove("hidden");
   $("#loginScreen").classList.remove("hidden");
   $("#loginPassword").value = "";
@@ -1169,9 +1542,20 @@ function escapeHtml(value) {
 $("#dateChip").textContent = new Intl.DateTimeFormat("de-AT", { weekday: "long", day: "2-digit", month: "long" }).format(new Date());
 $("#settingsButton").addEventListener("click", () => openSettings());
 $("#reportsButton").addEventListener("click", openReports);
+$("#timeClockButton").addEventListener("click", openTimeClock);
 $("#brandHome").addEventListener("click", closeSettings);
 $("#backToPos").addEventListener("click", closeSettings);
 $("#backFromReports").addEventListener("click", closeSettings);
+$("#backFromTimeClock").addEventListener("click", closeSettings);
+$("#clockEmployeeSelect").addEventListener("change", renderClockStatus);
+$("#clockInButton").addEventListener("click", () => clockEmployee("in"));
+$("#clockOutButton").addEventListener("click", () => clockEmployee("out"));
+$("#timeFromDate").addEventListener("change", renderTimeAdministration);
+$("#timeToDate").addEventListener("change", renderTimeAdministration);
+$("#addEmployeeForm").addEventListener("submit", addEmployee);
+$("#manualTimeForm").addEventListener("submit", addManualTimeEntry);
+$("#bonusForm").addEventListener("submit", saveEmployeeBonus);
+$("#exportTimeButton").addEventListener("click", exportTimeReport);
 $$(".open-settings").forEach((button) => button.addEventListener("click", () => openSettings("products")));
 $$(".settings-tab").forEach((button) => button.addEventListener("click", () => setSettingsTab(button.dataset.tab)));
 $$(".report-filter").forEach((button) => button.addEventListener("click", () => {
@@ -1228,8 +1612,6 @@ $("#excelImportInput").addEventListener("change", async (event) => {
   event.target.value = "";
 });
 $("#deleteSalesButton").addEventListener("click", deleteRevenueData);
-$("#createUserForm").addEventListener("submit", createManagedUser);
-$("#refreshUsersButton").addEventListener("click", loadManagedUsers);
 $("#logoutButton").addEventListener("click", logout);
 $("#topLogoutButton").addEventListener("click", logout);
 $("#editorForm").addEventListener("submit", saveEditor);
