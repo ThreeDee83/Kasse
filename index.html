@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260706-8">
+  <link rel="stylesheet" href="styles.css?v=20260706-11">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -240,7 +240,7 @@
         </div>
 
         <div class="time-kpis">
-          <article><span>Gesamtstunden</span><strong id="timeTotalHours">0,00 h</strong></article>
+          <article><span>Gesamtarbeitszeit</span><strong id="timeTotalHours">0 Std. 00 Min.</strong></article>
           <article><span>Grundlohn</span><strong id="timeTotalWages">0,00 €</strong></article>
           <article><span>Boni</span><strong id="timeTotalBonuses">0,00 €</strong></article>
           <article><span>Gesamtsumme</span><strong id="timeTotalPay">0,00 €</strong></article>
@@ -274,12 +274,12 @@
 
         <article class="time-table-card">
           <div><p class="eyebrow">TAGESSUMMEN</p><h2>Arbeitszeit je Mitarbeiter und Tag</h2></div>
-          <div class="time-table-wrap"><table class="time-table"><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Stunden</th><th>Stundensatz</th><th>Grundlohn</th><th>Bonus</th><th>Gesamt</th></tr></thead><tbody id="dailyTimeTable"></tbody></table></div>
+          <div class="time-table-wrap"><table class="time-table"><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Arbeitszeit</th><th>Stundensatz</th><th>Grundlohn</th><th>Bonus</th><th>Gesamt</th></tr></thead><tbody id="dailyTimeTable"></tbody></table></div>
         </article>
 
         <article class="time-table-card">
           <div><p class="eyebrow">MITARBEITERSUMMEN</p><h2>Gesamtstunden je Mitarbeiter</h2></div>
-          <div class="time-table-wrap"><table class="time-table"><thead><tr><th>Mitarbeiter</th><th>Stunden</th><th>Grundlohn</th><th>Bonus</th><th>Gesamt</th></tr></thead><tbody id="employeeTimeTotals"></tbody></table></div>
+          <div class="time-table-wrap"><table class="time-table"><thead><tr><th>Mitarbeiter</th><th>Arbeitszeit</th><th>Grundlohn</th><th>Bonus</th><th>Gesamt</th></tr></thead><tbody id="employeeTimeTotals"></tbody></table></div>
         </article>
 
         <article class="time-table-card">
@@ -431,9 +431,13 @@
       <div class="form-fields">
         <label>Mitarbeiter<select id="timeEntryEmployeeInput" required></select></label>
         <label>Standort<select id="timeEntryLocationInput" required></select></label>
-        <div class="form-row">
-          <label>Start<input id="timeEntryStartInput" type="datetime-local" step="1" required></label>
-          <label>Ende<input id="timeEntryEndInput" type="datetime-local" step="1"></label>
+        <div class="time-entry-date-row">
+          <label>Startdatum<input id="timeEntryStartDateInput" type="date" required></label>
+          <label>Startuhrzeit<input id="timeEntryStartTimeInput" type="time" step="1" required></label>
+        </div>
+        <div class="time-entry-date-row">
+          <label>Enddatum<input id="timeEntryEndDateInput" type="date"></label>
+          <label>Enduhrzeit<input id="timeEntryEndTimeInput" type="time" step="1"></label>
         </div>
       </div>
       <div class="dialog-actions">
@@ -458,9 +462,9 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="config.js?v=20260706-8"></script>
-  <script src="cloud.js?v=20260706-8"></script>
-  <script src="xlsx-export.js?v=20260706-8"></script>
-  <script src="app.js?v=20260706-8"></script>
+  <script src="config.js?v=20260706-11"></script>
+  <script src="cloud.js?v=20260706-11"></script>
+  <script src="xlsx-export.js?v=20260706-11"></script>
+  <script src="app.js?v=20260706-11"></script>
 </body>
 </html>

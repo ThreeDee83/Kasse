@@ -241,7 +241,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function styleSheet(sheet, widths, currencyColumns = [], decimalColumns = []) {
+  function styleSheet(sheet, widths, currencyColumns = [], decimalColumns = [], durationColumns = []) {
     sheet["!cols"] = widths.map((width) => ({ wch: width }));
     const range = XLSX.utils.decode_range(sheet["!ref"]);
     for (let column = range.s.c; column <= range.e.c; column += 1) {
@@ -264,9 +264,26 @@
         const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })];
         if (cell) cell.z = "0.00";
       });
+      durationColumns.forEach((column) => {
+        const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })];
+        if (cell) cell.z = "[h]:mm";
+      });
     }
     sheet["!autofilter"] = { ref: XLSX.utils.encode_range({ r: 0, c: 0 }, { r: Math.max(range.e.r - 1, 0), c: range.e.c }) };
     sheet["!freeze"] = { xSplit: 0, ySplit: 1, topLeftCell: "A2", activePane: "bottomLeft", state: "frozen" };
+  }
+
+  function safeEmployeeSheetName(name, usedNames) {
+    const cleaned = String(name || "Mitarbeiter").replace(/[\\/?*[\]:]/g, " ").replace(/\s+/g, " ").trim() || "Mitarbeiter";
+    let candidate = cleaned.slice(0, 31);
+    let suffix = 2;
+    while (usedNames.has(candidate.toLowerCase())) {
+      const addition = ` (${suffix})`;
+      candidate = `${cleaned.slice(0, 31 - addition.length)}${addition}`;
+      suffix += 1;
+    }
+    usedNames.add(candidate.toLowerCase());
+    return candidate;
   }
 
   function createTimeWorkbook(payload) {
@@ -274,26 +291,27 @@
     const dailyRows = payload.dailyRows || [];
     const employeeRows = payload.employeeRows || [];
     const detailRows = payload.detailRows || [];
+    const allEmployees = payload.employees || [];
     const workbook = XLSX.utils.book_new();
 
-    const details = [["Datum", "Mitarbeiter", "Standort", "Eingestempelt", "Ausgestempelt", "Stunden", "Stundensatz", "Grundlohn", "Status"]];
+    const details = [["Datum", "Mitarbeiter", "Standort", "Eingestempelt", "Ausgestempelt", "Arbeitszeit", "Stundensatz", "Grundlohn", "Status"]];
     detailRows.forEach((row) => details.push([
       row.dateLabel, row.employeeName, row.locationName, row.clockInLabel, row.clockOutLabel,
-      row.hours, row.hourlyRate, row.wages, row.open ? "Offen" : "Abgeschlossen"
+      row.hours / 24, row.hourlyRate, row.wages, row.open ? "Offen" : "Abgeschlossen"
     ]));
     const detailSheet = XLSX.utils.aoa_to_sheet(details);
-    styleSheet(detailSheet, [14, 24, 20, 21, 21, 12, 15, 15, 15], [6, 7], [5]);
+    styleSheet(detailSheet, [14, 24, 20, 21, 21, 14, 15, 15, 15], [6, 7], [], [5]);
     XLSX.utils.book_append_sheet(workbook, detailSheet, "Stempelzeiten");
 
     const detailLastRow = Math.max(detailRows.length + 1, 2);
-    const daily = [["Datum", "Mitarbeiter", "Stunden", "Stundensatz", "Grundlohn", "Bonus", "Gesamt", "Bonusnotiz"]];
+    const daily = [["Datum", "Mitarbeiter", "Arbeitszeit", "Stundensatz", "Grundlohn", "Bonus", "Gesamt", "Bonusnotiz"]];
     dailyRows.forEach((row, index) => {
       const excelRow = index + 2;
       daily.push([
         row.dateLabel,
         row.employeeName,
-        { t: "n", f: `SUMIFS('Stempelzeiten'!$F$2:$F$${detailLastRow},'Stempelzeiten'!$A$2:$A$${detailLastRow},A${excelRow},'Stempelzeiten'!$B$2:$B$${detailLastRow},B${excelRow})`, v: row.hours },
-        { t: "n", f: `IFERROR(E${excelRow}/C${excelRow},0)`, v: row.hourlyRate },
+        { t: "n", f: `SUMIFS('Stempelzeiten'!$F$2:$F$${detailLastRow},'Stempelzeiten'!$A$2:$A$${detailLastRow},A${excelRow},'Stempelzeiten'!$B$2:$B$${detailLastRow},B${excelRow})`, v: row.hours / 24 },
+        { t: "n", f: `IFERROR(E${excelRow}/(C${excelRow}*24),0)`, v: row.hourlyRate },
         { t: "n", f: `SUMIFS('Stempelzeiten'!$H$2:$H$${detailLastRow},'Stempelzeiten'!$A$2:$A$${detailLastRow},A${excelRow},'Stempelzeiten'!$B$2:$B$${detailLastRow},B${excelRow})`, v: row.wages },
         row.bonus,
         { t: "n", f: `E${excelRow}+F${excelRow}`, v: row.total },
@@ -301,16 +319,16 @@
       ]);
     });
     const dailySheet = XLSX.utils.aoa_to_sheet(daily);
-    styleSheet(dailySheet, [14, 24, 12, 15, 15, 14, 15, 30], [3, 4, 5, 6], [2]);
+    styleSheet(dailySheet, [14, 24, 14, 15, 15, 14, 15, 30], [3, 4, 5, 6], [], [2]);
     XLSX.utils.book_append_sheet(workbook, dailySheet, "Tagesabrechnung");
 
     const dailyLastRow = Math.max(dailyRows.length + 1, 2);
-    const employeeSummary = [["Mitarbeiter", "Gesamtstunden", "Grundlohn", "Bonus", "Gesamtsumme"]];
+    const employeeSummary = [["Mitarbeiter", "Gesamtarbeitszeit", "Grundlohn", "Bonus", "Gesamtsumme"]];
     employeeRows.forEach((row, index) => {
       const excelRow = index + 2;
       employeeSummary.push([
         row.employeeName,
-        { t: "n", f: `SUMIF('Tagesabrechnung'!$B$2:$B$${dailyLastRow},A${excelRow},'Tagesabrechnung'!$C$2:$C$${dailyLastRow})`, v: row.hours },
+        { t: "n", f: `SUMIF('Tagesabrechnung'!$B$2:$B$${dailyLastRow},A${excelRow},'Tagesabrechnung'!$C$2:$C$${dailyLastRow})`, v: row.hours / 24 },
         { t: "n", f: `SUMIF('Tagesabrechnung'!$B$2:$B$${dailyLastRow},A${excelRow},'Tagesabrechnung'!$E$2:$E$${dailyLastRow})`, v: row.wages },
         { t: "n", f: `SUMIF('Tagesabrechnung'!$B$2:$B$${dailyLastRow},A${excelRow},'Tagesabrechnung'!$F$2:$F$${dailyLastRow})`, v: row.bonus },
         { t: "n", f: `C${excelRow}+D${excelRow}`, v: row.total }
@@ -319,7 +337,7 @@
     const employeeTotalFormula = (column) => employeeRows.length ? `SUM(${column}2:${column}${employeeRows.length + 1})` : "0";
     employeeSummary.push([
       "Gesamt",
-      { t: "n", f: employeeTotalFormula("B"), v: payload.totals?.hours || 0 },
+      { t: "n", f: employeeTotalFormula("B"), v: (payload.totals?.hours || 0) / 24 },
       { t: "n", f: employeeTotalFormula("C"), v: payload.totals?.wages || 0 },
       { t: "n", f: employeeTotalFormula("D"), v: payload.totals?.bonus || 0 },
       { t: "n", f: employeeTotalFormula("E"), v: payload.totals?.total || 0 }
@@ -327,8 +345,45 @@
     employeeSummary.push(["Standort", payload.locationName, "", "", ""]);
     employeeSummary.push(["Zeitraum", payload.periodLabel, "", "", ""]);
     const summarySheet = XLSX.utils.aoa_to_sheet(employeeSummary);
-    styleSheet(summarySheet, [25, 17, 17, 15, 18], [2, 3, 4], [1]);
+    styleSheet(summarySheet, [25, 17, 17, 15, 18], [2, 3, 4], [], [1]);
     XLSX.utils.book_append_sheet(workbook, summarySheet, "Mitarbeitersummen");
+
+    const usedSheetNames = new Set(["mitarbeitersummen", "tagesabrechnung", "stempelzeiten"]);
+    const employeeSheetNames = [];
+    allEmployees.forEach((employee) => {
+      const rows = dailyRows
+        .map((row, index) => ({ ...row, sourceRow: index + 2 }))
+        .filter((row) => row.employeeId === employee.id);
+      const employeeData = [["Datum", "Arbeitszeit", "Stundensatz", "Grundlohn", "Bonus", "Gesamt", "Bonusnotiz"]];
+      rows.forEach((row) => employeeData.push([
+        row.dateLabel,
+        { t: "n", f: `'Tagesabrechnung'!C${row.sourceRow}`, v: row.hours / 24 },
+        { t: "n", f: `'Tagesabrechnung'!D${row.sourceRow}`, v: row.hourlyRate },
+        { t: "n", f: `'Tagesabrechnung'!E${row.sourceRow}`, v: row.wages },
+        { t: "n", f: `'Tagesabrechnung'!F${row.sourceRow}`, v: row.bonus },
+        { t: "n", f: `'Tagesabrechnung'!G${row.sourceRow}`, v: row.total },
+        row.bonusNote
+      ]));
+      if (!rows.length) {
+        employeeData.push(["Keine Arbeitszeiten im gewählten Zeitraum", "", "", "", "", "", ""]);
+      }
+      const lastEmployeeRow = rows.length + 1;
+      const totalFormula = (column) => rows.length ? `SUM(${column}2:${column}${lastEmployeeRow})` : "0";
+      employeeData.push([
+        "Gesamt",
+        { t: "n", f: totalFormula("B"), v: rows.reduce((sum, row) => sum + row.hours, 0) / 24 },
+        "",
+        { t: "n", f: totalFormula("D"), v: rows.reduce((sum, row) => sum + row.wages, 0) },
+        { t: "n", f: totalFormula("E"), v: rows.reduce((sum, row) => sum + row.bonus, 0) },
+        { t: "n", f: totalFormula("F"), v: rows.reduce((sum, row) => sum + row.total, 0) },
+        ""
+      ]);
+      const employeeSheet = XLSX.utils.aoa_to_sheet(employeeData);
+      styleSheet(employeeSheet, [14, 16, 15, 15, 14, 15, 30], [2, 3, 4, 5], [], [1]);
+      const sheetName = safeEmployeeSheetName(employee.name, usedSheetNames);
+      XLSX.utils.book_append_sheet(workbook, employeeSheet, sheetName);
+      employeeSheetNames.push(sheetName);
+    });
 
     workbook.Props = {
       Title: `Arbeitszeitabrechnung ${payload.periodLabel}`,
@@ -336,7 +391,7 @@
       Author: "Kassenraum",
       CreatedDate: new Date()
     };
-    workbook.SheetNames = ["Mitarbeitersummen", "Tagesabrechnung", "Stempelzeiten"];
+    workbook.SheetNames = ["Mitarbeitersummen", "Tagesabrechnung", "Stempelzeiten", ...employeeSheetNames];
     return workbook;
   }
 

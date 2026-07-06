@@ -852,7 +852,10 @@ function formatDateTime(value) {
 }
 
 function formatHours(value) {
-  return `${new Intl.NumberFormat("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)} h`;
+  const totalMinutes = Math.max(0, Math.round(Number(value || 0) * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours} Std. ${String(minutes).padStart(2, "0")} Min.`;
 }
 
 function timeRange() {
@@ -863,22 +866,11 @@ function timeRange() {
   };
 }
 
-function splitEntryByDay(entry) {
+function entryDurationHours(entry) {
   const start = new Date(entry.clockIn);
   const end = entry.clockOut ? new Date(entry.clockOut) : new Date();
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return [];
-  const segments = [];
-  let cursor = new Date(start);
-  while (cursor < end) {
-    const nextDay = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
-    const segmentEnd = end < nextDay ? end : nextDay;
-    segments.push({
-      dateKey: localDateKey(cursor),
-      hours: (segmentEnd - cursor) / 3600000
-    });
-    cursor = segmentEnd;
-  }
-  return segments;
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return 0;
+  return (end - start) / 3600000;
 }
 
 function aggregateTimeTracking() {
@@ -886,14 +878,14 @@ function aggregateTimeTracking() {
   const dailyMap = new Map();
   timeEntries.forEach((entry) => {
     const entryRate = Number(entry.hourlyRate ?? employeeForTime(entry.employeeId)?.hourlyRate ?? 0);
-    splitEntryByDay(entry).forEach((segment) => {
-      if (segment.dateKey < from || segment.dateKey > to) return;
-      const key = `${entry.employeeId}|${segment.dateKey}`;
-      const current = dailyMap.get(key) || { employeeId: entry.employeeId, dateKey: segment.dateKey, hours: 0, wages: 0 };
-      current.hours += segment.hours;
-      current.wages += segment.hours * entryRate;
-      dailyMap.set(key, current);
-    });
+    const dateKey = localDateKey(new Date(entry.clockIn));
+    if (dateKey < from || dateKey > to) return;
+    const hours = entryDurationHours(entry);
+    const key = `${entry.employeeId}|${dateKey}`;
+    const current = dailyMap.get(key) || { employeeId: entry.employeeId, dateKey, hours: 0, wages: 0 };
+    current.hours += hours;
+    current.wages += hours * entryRate;
+    dailyMap.set(key, current);
   });
   employeeBonuses.forEach((bonus) => {
     if (bonus.dateKey < from || bonus.dateKey > to) return;
@@ -1021,7 +1013,7 @@ function renderTimeAdministration() {
     return day >= from && day <= to;
   });
   $("#timeEntriesTable").innerHTML = filteredEntries.length ? filteredEntries.map((entry) => {
-    const hours = splitEntryByDay(entry).reduce((sum, segment) => sum + segment.hours, 0);
+    const hours = entryDurationHours(entry);
     return `<tr><td>${escapeHtml(employeeForTime(entry.employeeId)?.name || "Unbekannt")}</td>
       <td>${escapeHtml(locationNameForTime(entry.locationId))}</td>
       <td>${formatDateTime(entry.clockIn)}</td><td class="${entry.clockOut ? "" : "time-open"}">${formatDateTime(entry.clockOut)}</td>
@@ -1192,12 +1184,15 @@ async function addManualTimeEntry(event) {
   }
 }
 
-function toDateTimeLocal(value) {
-  if (!value) return "";
+function toLocalDateAndTime(value) {
+  if (!value) return { date: "", time: "" };
   const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "";
+  if (!Number.isFinite(date.getTime())) return { date: "", time: "" };
   const part = (number) => String(number).padStart(2, "0");
-  return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}T${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`;
+  return {
+    date: `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}`,
+    time: `${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`
+  };
 }
 
 function openTimeEntryEditor(entryId) {
@@ -1212,8 +1207,12 @@ function openTimeEntryEditor(entryId) {
   $("#timeEntryLocationInput").value = locations.some((location) => location.id === entry.locationId)
     ? entry.locationId
     : currentLocationId;
-  $("#timeEntryStartInput").value = toDateTimeLocal(entry.clockIn);
-  $("#timeEntryEndInput").value = toDateTimeLocal(entry.clockOut);
+  const start = toLocalDateAndTime(entry.clockIn);
+  const end = toLocalDateAndTime(entry.clockOut);
+  $("#timeEntryStartDateInput").value = start.date;
+  $("#timeEntryStartTimeInput").value = start.time;
+  $("#timeEntryEndDateInput").value = end.date;
+  $("#timeEntryEndTimeInput").value = end.time;
   $("#timeEntryDialog").showModal();
 }
 
@@ -1222,9 +1221,17 @@ async function saveEditedTimeEntry(event) {
   const existing = timeEntries.find((entry) => entry.id === $("#timeEntryEditId").value);
   if (!existing) return;
   const employeeId = $("#timeEntryEmployeeInput").value;
-  const start = new Date($("#timeEntryStartInput").value);
-  const endValue = $("#timeEntryEndInput").value;
-  const end = endValue ? new Date(endValue) : null;
+  const startDate = $("#timeEntryStartDateInput").value;
+  const startTime = $("#timeEntryStartTimeInput").value;
+  const endDate = $("#timeEntryEndDateInput").value;
+  const endTime = $("#timeEntryEndTimeInput").value;
+  const start = new Date(`${startDate}T${startTime}`);
+  const hasEnd = Boolean(endDate || endTime);
+  const end = endDate && endTime ? new Date(`${endDate}T${endTime}`) : null;
+  if (hasEnd && (!endDate || !endTime)) {
+    showToast("Bitte Enddatum und Enduhrzeit vollständig eingeben");
+    return;
+  }
   if (!employeeId || !Number.isFinite(start.getTime()) || (end && (!Number.isFinite(end.getTime()) || end <= start))) {
     showToast("Endzeit muss nach der Startzeit liegen");
     return;
@@ -1323,20 +1330,22 @@ function exportTimeReport() {
   const aggregated = aggregateTimeTracking();
   const detailRows = [];
   timeEntries.forEach((entry) => {
+    const dateKey = localDateKey(new Date(entry.clockIn));
+    if (dateKey < from || dateKey > to) return;
+    const hours = entryDurationHours(entry);
+    const hourlyRate = Number(entry.hourlyRate ?? employeeForTime(entry.employeeId)?.hourlyRate ?? 0);
     const employeeName = employeeForTime(entry.employeeId)?.name || "Unbekannt";
-    splitEntryByDay(entry).forEach((segment) => {
-      if (segment.dateKey < from || segment.dateKey > to) return;
-      detailRows.push({
-        dateLabel: formatDateKey(segment.dateKey),
-        employeeName,
-        locationName: locationNameForTime(entry.locationId),
-        clockInLabel: formatDateTime(entry.clockIn),
-        clockOutLabel: formatDateTime(entry.clockOut),
-        hours: segment.hours,
-        hourlyRate: Number(entry.hourlyRate ?? employeeForTime(entry.employeeId)?.hourlyRate ?? 0),
-        wages: segment.hours * Number(entry.hourlyRate ?? employeeForTime(entry.employeeId)?.hourlyRate ?? 0),
-        open: !entry.clockOut
-      });
+    detailRows.push({
+      employeeId: entry.employeeId,
+      dateLabel: formatDateKey(dateKey),
+      employeeName,
+      locationName: locationNameForTime(entry.locationId),
+      clockInLabel: formatDateTime(entry.clockIn),
+      clockOutLabel: formatDateTime(entry.clockOut),
+      hours,
+      hourlyRate,
+      wages: hours * hourlyRate,
+      open: !entry.clockOut
     });
   });
   const payload = {
@@ -1344,6 +1353,7 @@ function exportTimeReport() {
     periodLabel: `${formatDateKey(from)} bis ${formatDateKey(to)}`,
     dailyRows: aggregated.dailyRows.map((row) => ({ ...row, dateLabel: formatDateKey(row.dateKey) })),
     employeeRows: aggregated.employeeRows,
+    employees: employees.map((employee) => ({ id: employee.id, name: employee.name })),
     detailRows,
     totals: aggregated.totals
   };

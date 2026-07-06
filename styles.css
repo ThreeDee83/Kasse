@@ -197,6 +197,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .color-option { width: 34px; height: 34px; border: 3px solid var(--white); border-radius: 10px; box-shadow: 0 0 0 1px #44504b; cursor: pointer; }
 .color-option.selected { box-shadow: 0 0 0 2px var(--ink); transform: scale(.92); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.time-entry-date-row { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: 14px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 28px; }
 .checkout-dialog { width: min(390px, calc(100% - 30px)); padding: 35px; border: 0; border-radius: 18px; text-align: center; }
 .checkout-dialog .primary-button { width: 100%; margin-top: 18px; }
@@ -429,6 +430,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .time-filters > div { grid-column: auto; }
   .time-kpis { grid-template-columns: 1fr; }
   .time-inline-form, .time-form-grid, .employee-admin-row { grid-template-columns: 1fr; }
+  .time-entry-date-row { grid-template-columns: minmax(0, 1fr) minmax(0, .8fr); gap: 9px; }
   .time-form-grid button, .time-inline-form button { width: 100%; }
   .report-table th, .report-table td { padding: 12px 14px; }
 }
