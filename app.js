@@ -43,6 +43,7 @@ let selectedCategory = "all";
 let editor = { type: null, id: null, color: COLORS[0], copySourceId: null };
 let reportFilter = "today";
 let pendingPaymentTotal = 0;
+let combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
 let toastTimer;
 let cloudSaveTimer;
 let realtimeReloadTimer;
@@ -79,14 +80,18 @@ function loadCashBalances() {
 
 function loadAppSettings() {
   try {
-    return { theme: "dark", billingEmail: "", billingEmail2: "", ...(JSON.parse(localStorage.getItem("kassenraum-settings")) || {}) };
+    return { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", ...(JSON.parse(localStorage.getItem("kassenraum-settings")) || {}) };
   } catch (_) {
-    return { theme: "dark", billingEmail: "", billingEmail2: "" };
+    return { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate" };
   }
 }
 
 function scopedKey(base) {
   return currentLocationId && currentLocationId !== "local" ? `${base}:${currentLocationId}` : base;
+}
+
+function scopedKeyFor(base, locationId) {
+  return locationId && locationId !== "local" ? `${base}:${locationId}` : base;
 }
 
 function persist() {
@@ -202,7 +207,7 @@ function loadLocalLocation(locationId) {
   data = read("kassenraum-data", structuredClone(DEFAULT_DATA));
   sales = read("kassenraum-sales", []);
   cashBalances = read("kassenraum-cash-balances", {});
-  appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", ...read("kassenraum-settings", {}) };
+  appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", ...read("kassenraum-settings", {}) };
   const readGlobal = (key, fallback) => {
     try {
       return JSON.parse(localStorage.getItem(key)) ?? fallback;
@@ -256,7 +261,7 @@ async function switchLocation(locationId, background = false) {
     const isNewLocation = !remoteData?.categories?.length;
     const shouldMigrate = isNewLocation && !localStorage.getItem("kassenraum-cloud-migrated");
     data = isNewLocation ? structuredClone(shouldMigrate ? legacySnapshot.data : DEFAULT_DATA) : remoteData;
-    appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", ...(shouldMigrate ? legacySnapshot.settings : remote.state?.settings || {}) };
+    appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", ...(shouldMigrate ? legacySnapshot.settings : remote.state?.settings || {}) };
     sales = shouldMigrate && !remote.sales.length ? structuredClone(legacySnapshot.sales) : remote.sales;
     cashBalances = shouldMigrate && !Object.keys(remote.cashBalances).length ? structuredClone(legacySnapshot.cashBalances) : remote.cashBalances;
     persistSales();
@@ -466,13 +471,14 @@ function closeSettings() {
   renderAll();
 }
 
-function openReports() {
+async function openReports() {
   $("#posView").classList.add("hidden");
   $("#settingsView").classList.add("hidden");
   $("#timeClockView").classList.add("hidden");
   $("#reportsView").classList.remove("hidden");
   reportFilter = "today";
   $("#reportDateInput").value = localDateKey(new Date());
+  await refreshReportScope(true);
   renderReport();
   window.scrollTo(0, 0);
 }
@@ -490,10 +496,70 @@ function formatDateKey(key) {
     .format(new Date(`${key}T12:00:00`));
 }
 
+function useCombinedReports() {
+  return appSettings.billingMode === "combined" && locations.length > 1;
+}
+
+function reportSourceSales() {
+  return useCombinedReports() ? combinedReportScope.sales : sales;
+}
+
+function reportSourceCashBalances() {
+  return useCombinedReports() ? combinedReportScope.cashBalances : cashBalances;
+}
+
+function readStoredJson(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function refreshReportScope(force = false) {
+  if (!useCombinedReports()) {
+    combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
+    return;
+  }
+  const scopeKey = `${locations.map((location) => location.id).join("|")}:${sales.length}:${Object.keys(cashBalances).length}`;
+  if (!force && combinedReportScope.key === scopeKey) return;
+  try {
+    if (localMode) {
+      const allSales = [];
+      const combinedCash = {};
+      locations.forEach((location) => {
+        const locationSales = readStoredJson(scopedKeyFor("kassenraum-sales", location.id), []);
+        locationSales.forEach((sale) => allSales.push({ ...sale, locationId: location.id, locationName: location.name }));
+        const locationCash = readStoredJson(scopedKeyFor("kassenraum-cash-balances", location.id), {});
+        Object.entries(locationCash).forEach(([dateKey, value]) => {
+          if (Number.isFinite(Number(value))) combinedCash[dateKey] = (combinedCash[dateKey] || 0) + Number(value);
+        });
+      });
+      combinedReportScope = { key: scopeKey, sales: allSales, cashBalances: combinedCash, locationName: "Alle Standorte" };
+    } else {
+      const remote = await CloudStore.loadReportsForLocations(locations.map((location) => location.id));
+      const locationNames = Object.fromEntries(locations.map((location) => [location.id, location.name]));
+      const allSales = (remote.sales || []).map((sale) => ({
+        ...sale,
+        locationId: sale.location_id || sale.locationId,
+        locationName: locationNames[sale.location_id || sale.locationId] || "Standort"
+      }));
+      const combinedCash = {};
+      (remote.cashBalances || []).forEach((row) => {
+        if (Number.isFinite(Number(row.balance))) combinedCash[row.date_key] = (combinedCash[row.date_key] || 0) + Number(row.balance);
+      });
+      combinedReportScope = { key: scopeKey, sales: allSales, cashBalances: combinedCash, locationName: "Alle Standorte" };
+    }
+  } catch (error) {
+    showToast(error.message || "Gemeinsame Abrechnung konnte nicht geladen werden");
+  }
+}
+
 function filteredSales() {
-  if (reportFilter === "all") return sales;
+  const source = reportSourceSales();
+  if (reportFilter === "all") return source;
   const key = reportFilter === "today" ? localDateKey(new Date()) : $("#reportDateInput").value;
-  return sales.filter((sale) => localDateKey(sale.timestamp) === key);
+  return source.filter((sale) => localDateKey(sale.timestamp) === key);
 }
 
 function selectedReportDateKey() {
@@ -542,7 +608,7 @@ function renderReport() {
   const reportSales = filteredSales();
   const summary = aggregateSales(reportSales);
   const periodKey = selectedReportDateKey();
-  $("#reportPeriodLabel").textContent = isAll ? "Gesamter gespeicherter Zeitraum" : formatDateKey(periodKey);
+  $("#reportPeriodLabel").textContent = `${isAll ? "Gesamter gespeicherter Zeitraum" : formatDateKey(periodKey)} · ${useCombinedReports() ? "alle Standorte gemeinsam" : "aktueller Standort"}`;
   $("#reportRevenue").textContent = euro(summary.revenue);
   $("#reportSalesCount").textContent = reportSales.length;
   $("#reportAverage").textContent = `Ø ${euro(reportSales.length ? summary.revenue / reportSales.length : 0)} pro Bon`;
@@ -560,9 +626,9 @@ function renderReport() {
   `).join("");
   $("#emptyReport").classList.toggle("hidden", summary.products.length > 0);
   $(".report-table-scroll").classList.toggle("hidden", summary.products.length === 0);
-  $("#cashBalancePanel").classList.toggle("hidden", isAll);
-  if (!isAll) {
-    const savedBalance = cashBalances[periodKey];
+  $("#cashBalancePanel").classList.toggle("hidden", isAll || useCombinedReports());
+  if (!isAll && !useCombinedReports()) {
+    const savedBalance = reportSourceCashBalances()[periodKey];
     $("#cashBalanceInput").value = Number.isFinite(savedBalance) ? savedBalance : "";
     renderCashDifference(summary.revenue);
   }
@@ -688,27 +754,31 @@ function buildExportPayload() {
       rows: [...rows.values()],
       categoryNames,
       cashBalance,
-      locationName: locations.find((location) => location.id === currentLocationId)?.name || "Standort"
+      locationName: useCombinedReports()
+        ? combinedReportScope.locationName
+        : (locations.find((location) => location.id === currentLocationId)?.name || "Standort")
     };
   };
 
   if (reportFilter === "all") {
+    const sourceSales = reportSourceSales();
+    const sourceCashBalances = reportSourceCashBalances();
     const dateKeys = [...new Set([
-      ...sales.map((sale) => localDateKey(sale.timestamp)),
-      ...Object.keys(cashBalances)
+      ...sourceSales.map((sale) => localDateKey(sale.timestamp)),
+      ...Object.keys(sourceCashBalances)
     ])].sort();
     const sheets = dateKeys.map((dateKey) => buildSheet(
-      sales.filter((sale) => localDateKey(sale.timestamp) === dateKey),
+      sourceSales.filter((sale) => localDateKey(sale.timestamp) === dateKey),
       {
         dateLabel: formatDateKey(dateKey),
         sheetName: formatDateKey(dateKey),
-        cashBalance: Number.isFinite(cashBalances[dateKey]) ? cashBalances[dateKey] : null
+        cashBalance: Number.isFinite(sourceCashBalances[dateKey]) ? sourceCashBalances[dateKey] : null
       }
     ));
     const enteredCashBalances = dateKeys
-      .map((dateKey) => cashBalances[dateKey])
+      .map((dateKey) => sourceCashBalances[dateKey])
       .filter((value) => Number.isFinite(value));
-    sheets.push(buildSheet(sales, {
+    sheets.push(buildSheet(sourceSales, {
       dateLabel: "Gesamtabrechnung",
       sheetName: "Gesamtabrechnung",
       cashBalance: enteredCashBalances.length
@@ -719,17 +789,19 @@ function buildExportPayload() {
   }
 
   const dateKey = selectedReportDateKey();
+  const sourceCashBalances = reportSourceCashBalances();
   return {
-    filename: `Abrechnung_${dateKey}.xlsx`,
+    filename: `${useCombinedReports() ? "Abrechnung_Alle_Standorte" : "Abrechnung"}_${dateKey}.xlsx`,
     workbook: buildSheet(filteredSales(), {
       dateLabel: formatDateKey(dateKey),
       sheetName: formatDateKey(dateKey),
-      cashBalance: Number.isFinite(cashBalances[dateKey]) ? cashBalances[dateKey] : null
+      cashBalance: Number.isFinite(sourceCashBalances[dateKey]) ? sourceCashBalances[dateKey] : null
     })
   };
 }
 
-function exportReport() {
+async function exportReport() {
+  await refreshReportScope(true);
   const payload = buildExportPayload();
   XlsxExport.downloadWorkbook(payload.workbook, payload.filename);
   showToast("Excel-Abrechnung wurde erstellt");
@@ -748,11 +820,12 @@ async function emailReport() {
   button.textContent = "Mail-App wird geöffnet …";
 
   try {
+    await refreshReportScope(true);
     const payload = buildExportPayload();
     const sales = filteredSales();
     const summary = aggregateSales(sales);
     const period = reportFilter === "all" ? "Gesamtabrechnung" : formatDateKey(selectedReportDateKey());
-    const locationName = locations.find((location) => location.id === currentLocationId)?.name || "Standort";
+    const locationName = useCombinedReports() ? combinedReportScope.locationName : (locations.find((location) => location.id === currentLocationId)?.name || "Standort");
     const bytes = XlsxExport.createWorkbook(payload.workbook);
     const file = new File([bytes], payload.filename, {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1479,6 +1552,7 @@ function renderSettings() {
   $$(".delete-product").forEach((button) => button.addEventListener("click", () => deleteProduct(button.dataset.id)));
   setupCategoryDragAndDrop();
   $("#themeSelect").value = appSettings.theme || "dark";
+  $("#billingModeSelect").value = appSettings.billingMode || "separate";
   $("#billingEmailInput").value = appSettings.billingEmail || "";
   $("#billingEmail2Input").value = appSettings.billingEmail2 || "";
   $("#currentUserLabel").textContent = localMode ? "Lokaler Testmodus" : (currentUserEmail || "Supabase-Konto aktiv");
@@ -1680,6 +1754,240 @@ async function importExcelFile(file) {
   }
 }
 
+function selectedAdminExcelSections() {
+  return {
+    catalog: $("#excelCatalogCheckbox")?.checked !== false,
+    employees: $("#excelEmployeesCheckbox")?.checked === true
+  };
+}
+
+function parseCatalogMatrix(matrix) {
+  if (matrix.length < 2 || matrix[0].length < 2) throw new Error("Die Excelmatrix enthält keine Kategorien oder Artikel.");
+  const importedCategories = matrix[0].slice(1).map((name, index) => ({
+    id: uid("cat"),
+    name: String(name).trim(),
+    color: COLORS[index % COLORS.length],
+    hidden: false
+  })).filter((category) => category.name);
+  const importedProducts = [];
+  matrix.slice(1).forEach((row) => {
+    const name = String(row[0] || "").trim();
+    if (!name) return;
+    importedCategories.forEach((category, index) => {
+      const rawPrice = row[index + 1];
+      if (rawPrice === "" || rawPrice === null || rawPrice === undefined) return;
+      const price = Number(String(rawPrice).replace(",", "."));
+      if (!Number.isFinite(price) || price < 0) return;
+      importedProducts.push({ id: uid("product"), name, price, categoryId: category.id });
+    });
+  });
+  if (!importedProducts.length) throw new Error("Keine gültigen Preise gefunden.");
+  return { categories: importedCategories, products: importedProducts };
+}
+
+async function applyCatalogImport(importedData) {
+  data = importedData;
+  clearTimeout(cloudSaveTimer);
+  if (localMode) {
+    locations.forEach((location) => localStorage.setItem(scopedKeyFor("kassenraum-data", location.id), JSON.stringify(data)));
+    renderAll();
+    return `Sortiment wurde für alle ${locations.length} Standorte übernommen`;
+  }
+  const locationIds = locations.filter((location) => location.role === "admin").map((location) => location.id);
+  const result = await CloudStore.saveCatalogToLocations(locationIds, data);
+  localStorage.setItem(scopedKey("kassenraum-data"), JSON.stringify(data));
+  renderAll();
+  return result?.queued
+    ? "Sortiment gespeichert – alle Standorte werden nach Verbindung synchronisiert"
+    : `Sortiment wurde für alle Benutzer an ${locationIds.length} Standorten übernommen`;
+}
+
+function parseEmployeeRows(sheet) {
+  if (!sheet) throw new Error("Das Blatt „Mitarbeiter“ wurde nicht gefunden.");
+  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+  const rows = matrix.slice(1).map((row) => {
+    const name = String(row[0] || "").trim();
+    const hourlyRate = Number(String(row[1] || "0").replace(",", "."));
+    const activeText = String(row[2] ?? "ja").trim().toLowerCase();
+    return {
+      name,
+      hourlyRate,
+      active: !["nein", "no", "false", "0", "inaktiv"].includes(activeText)
+    };
+  }).filter((employee) => employee.name && Number.isFinite(employee.hourlyRate) && employee.hourlyRate >= 0);
+  if (!rows.length) throw new Error("Keine gültigen Mitarbeiter im Blatt „Mitarbeiter“ gefunden.");
+  return rows;
+}
+
+async function applyEmployeeImport(importedEmployees) {
+  if (localMode) {
+    importedEmployees.forEach((employee) => {
+      const existing = employees.find((item) => item.name.toLowerCase() === employee.name.toLowerCase());
+      if (existing) Object.assign(existing, employee);
+      else employees.push({ ...employee, id: uid("employee") });
+    });
+    persistLocalTimeTracking();
+  } else {
+    for (const employee of importedEmployees) {
+      const existing = employees.find((item) => item.name.toLowerCase() === employee.name.toLowerCase());
+      await CloudStore.saveEmployee(currentLocationId, existing ? { ...employee, id: existing.id } : employee);
+    }
+    await reloadTimeTracking();
+  }
+  renderTimeTracking();
+  return `${importedEmployees.length} Mitarbeiter wurden übernommen`;
+}
+
+function exportAdminExcel() {
+  if (!globalThis.XLSX) {
+    showToast("Excel-Bibliothek ist offline noch nicht verfügbar.");
+    return;
+  }
+  const sections = selectedAdminExcelSections();
+  if (!sections.catalog && !sections.employees) {
+    showToast("Bitte mindestens einen Bereich auswählen.");
+    return;
+  }
+  const workbook = XLSX.utils.book_new();
+  if (sections.catalog) {
+    const categories = data.categories;
+    const productNames = [...new Set(data.products.map((product) => product.name))].sort((a, b) => a.localeCompare(b, "de"));
+    const matrix = [["Artikel", ...categories.map((category) => category.name)]];
+    productNames.forEach((name) => {
+      const row = [name];
+      categories.forEach((category) => {
+        const product = data.products.find((item) => item.name === name && item.categoryId === category.id);
+        row.push(product ? Number(product.price) : "");
+      });
+      matrix.push(row);
+    });
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(matrix), "Sortiment");
+  }
+  if (sections.employees) {
+    const employeeRows = [["Name", "Stundensatz", "Aktiv"], ...employees.map((employee) => [
+      employee.name,
+      Number(employee.hourlyRate || 0),
+      employee.active === false ? "nein" : "ja"
+    ])];
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(employeeRows), "Mitarbeiter");
+  }
+  XLSX.writeFile(workbook, `Kassenraum_Einstellungen_${localDateKey(new Date())}.xlsx`);
+  showToast("Einstellungen wurden als Excel exportiert");
+}
+
+function protectWorkbookSheets(workbook, password = "Knusperhaus2026#") {
+  workbook.SheetNames.forEach((sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return;
+    sheet["!protect"] = {
+      password,
+      selectLockedCells: false,
+      selectUnlockedCells: false,
+      formatCells: false,
+      formatColumns: false,
+      formatRows: false,
+      insertColumns: false,
+      insertRows: false,
+      deleteColumns: false,
+      deleteRows: false,
+      sort: false,
+      autoFilter: false,
+      pivotTables: false
+    };
+  });
+  return workbook;
+}
+
+function buildRevenueBackupWorkbook(backupSales, backupCashBalances, locationName) {
+  const workbook = XLSX.utils.book_new();
+  const createdAt = new Date();
+  const summary = aggregateSales(backupSales);
+  const summaryRows = [
+    ["Umsatzbackup", ""],
+    ["Erstellt am", createdAt.toLocaleString("de-AT")],
+    ["Standort", locationName],
+    ["Passwort", "Knusperhaus2026#"],
+    ["Hinweis", "Excel-Blattschutz/Arbeitsmappenschutz; Datei bitte zusätzlich sicher ablegen."],
+    ["Belege", backupSales.length],
+    ["Artikel gesamt", summary.itemCount],
+    ["0-€ Artikel", summary.freeCount],
+    ["Umsatz", summary.revenue]
+  ];
+  const saleRows = [["Beleg-ID", "Datum/Uhrzeit", "Datum", "Standort", "Gesamtbetrag", "Artikelanzahl"]];
+  const itemRows = [["Beleg-ID", "Datum/Uhrzeit", "Artikel", "Kategorie", "Preis", "Anzahl", "Gesamtbetrag"]];
+  backupSales.forEach((sale) => {
+    const timestamp = new Date(sale.timestamp);
+    const itemCount = (sale.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    saleRows.push([
+      sale.id || "",
+      Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString("de-AT") : String(sale.timestamp || ""),
+      Number.isFinite(timestamp.getTime()) ? localDateKey(timestamp) : "",
+      sale.locationName || locationName,
+      Number(sale.total || 0),
+      itemCount
+    ]);
+    (sale.items || []).forEach((item) => {
+      itemRows.push([
+        sale.id || "",
+        Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString("de-AT") : String(sale.timestamp || ""),
+        item.name || "",
+        item.categoryName || "Ohne Kategorie",
+        Number(item.price || 0),
+        Number(item.quantity || 0),
+        Number(item.price || 0) * Number(item.quantity || 0)
+      ]);
+    });
+  });
+  const cashRows = [["Datum", "Kassenstand"]];
+  Object.entries(backupCashBalances || {}).sort(([a], [b]) => a.localeCompare(b)).forEach(([dateKey, balance]) => {
+    cashRows.push([dateKey, Number(balance || 0)]);
+  });
+  const sheets = [
+    ["Zusammenfassung", summaryRows],
+    ["Belege", saleRows],
+    ["Positionen", itemRows],
+    ["Kassenstände", cashRows]
+  ];
+  sheets.forEach(([sheetName, rows]) => {
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    sheet["!cols"] = rows[0].map((_, index) => ({ wch: index === 0 ? 28 : 18 }));
+    XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+  });
+  return protectWorkbookSheets(workbook);
+}
+
+function downloadRevenueBackup(backupSales = sales, backupCashBalances = cashBalances) {
+  if (!globalThis.XLSX) throw new Error("Excel-Bibliothek ist offline noch nicht verfügbar.");
+  const locationName = locations.find((location) => location.id === currentLocationId)?.name || "Standort";
+  const workbook = buildRevenueBackupWorkbook(backupSales, backupCashBalances, locationName);
+  const filename = `Umsatzbackup_${locationName.replace(/[\\/:*?"<>|]+/g, "_")}_${localDateKey(new Date())}.xlsx`;
+  XLSX.writeFile(workbook, filename, { compression: true, cellStyles: true });
+}
+
+async function importExcelFile(file) {
+  if (!globalThis.XLSX) throw new Error("Excel-Bibliothek ist offline noch nicht verfügbar.");
+  const sections = selectedAdminExcelSections();
+  if (!sections.catalog && !sections.employees) throw new Error("Bitte mindestens einen Bereich auswählen.");
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  const messages = [];
+  let importedCatalog = null;
+  let importedEmployees = null;
+  if (sections.catalog) {
+    const sheet = workbook.Sheets.Sortiment || workbook.Sheets[workbook.SheetNames[0]];
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+    importedCatalog = parseCatalogMatrix(matrix);
+  }
+  if (sections.employees) importedEmployees = parseEmployeeRows(workbook.Sheets.Mitarbeiter);
+  const confirmationParts = [];
+  if (importedCatalog) confirmationParts.push(`${importedCatalog.categories.length} Kategorien und ${importedCatalog.products.length} Artikel`);
+  if (importedEmployees) confirmationParts.push(`${importedEmployees.length} Mitarbeiter/Stundensätze`);
+  if (!confirm(`${confirmationParts.join(" sowie ")} importieren? Sortiment wird an allen verwalteten Standorten ersetzt; Mitarbeiter werden hinzugefügt oder aktualisiert.`)) return;
+  if (importedCatalog) messages.push(await applyCatalogImport(importedCatalog));
+  if (importedEmployees) messages.push(await applyEmployeeImport(importedEmployees));
+  renderAll();
+  showToast(messages.join(" · "));
+}
+
 async function updateLocationName(locationId) {
   const location = locations.find((entry) => entry.id === locationId);
   const row = $(`.location-admin-row[data-id="${locationId}"]`);
@@ -1759,6 +2067,34 @@ async function resetTimeTrackingData() {
   }
 }
 
+async function deleteRevenueData() {
+  if (!isAdminUser()) return;
+  if (!sales.length && !Object.keys(cashBalances).length) {
+    showToast("Keine Umsatzdaten für ein Backup vorhanden");
+    return;
+  }
+  if (!confirm("Vor dem Löschen muss ein Umsatzbackup erstellt werden. Sämtliche Umsatzdaten jetzt downloaden?")) return;
+  try {
+    downloadRevenueBackup();
+  } catch (error) {
+    showToast(error.message || "Umsatzbackup konnte nicht erstellt werden");
+    return;
+  }
+  if (!confirm("Backup wurde zum Download angeboten. Umsatzdaten und Kassenstände dieses Standorts jetzt unwiderruflich löschen?")) return;
+  try {
+    if (!localMode) await CloudStore.deleteSales(currentLocationId);
+    sales = [];
+    cashBalances = {};
+    persistSales();
+    persistCashBalances();
+    await refreshReportScope(true);
+    renderReport();
+    showToast("Umsatzdaten wurden gelöscht");
+  } catch (error) {
+    showToast(error.message || "Umsatzdaten konnten nicht gelöscht werden");
+  }
+}
+
 function showToast(message) {
   clearTimeout(toastTimer);
   $("#toast").textContent = message;
@@ -1807,11 +2143,15 @@ $("#bonusForm").addEventListener("submit", saveEmployeeBonus);
 $("#exportTimeButton").addEventListener("click", exportTimeReport);
 $$(".open-settings").forEach((button) => button.addEventListener("click", () => openSettings("products")));
 $$(".settings-tab").forEach((button) => button.addEventListener("click", () => setSettingsTab(button.dataset.tab)));
-$$(".report-filter").forEach((button) => button.addEventListener("click", () => {
+$$(".report-filter").forEach((button) => button.addEventListener("click", async () => {
   reportFilter = button.dataset.filter;
+  await refreshReportScope();
   renderReport();
 }));
-$("#reportDateInput").addEventListener("change", renderReport);
+$("#reportDateInput").addEventListener("change", async () => {
+  await refreshReportScope();
+  renderReport();
+});
 $("#cashBalanceInput").addEventListener("input", saveCashBalance);
 $("#exportReportButton").addEventListener("click", exportReport);
 $("#emailReportButton").addEventListener("click", emailReport);
@@ -1823,6 +2163,13 @@ $("#themeSelect").addEventListener("change", (event) => {
   appSettings.theme = event.target.value;
   persist();
   applyTheme();
+});
+$("#billingModeSelect").addEventListener("change", async (event) => {
+  appSettings.billingMode = event.target.value;
+  persist();
+  await refreshReportScope(true);
+  if (!$("#reportsView").classList.contains("hidden")) renderReport();
+  showToast(appSettings.billingMode === "combined" ? "Gemeinsame Standortabrechnung aktiv" : "Getrennte Standortabrechnung aktiv");
 });
 $("#billingEmailInput").addEventListener("change", (event) => {
   appSettings.billingEmail = event.target.value.trim();
@@ -1865,6 +2212,7 @@ $("#excelImportInput").addEventListener("change", async (event) => {
   }
   event.target.value = "";
 });
+$("#adminExcelExportButton").addEventListener("click", exportAdminExcel);
 $("#deleteSalesButton").addEventListener("click", deleteRevenueData);
 $("#resetTimeTrackingButton").addEventListener("click", resetTimeTrackingData);
 $("#logoutButton").addEventListener("click", logout);

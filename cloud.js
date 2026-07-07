@@ -131,6 +131,19 @@
     };
   }
 
+  async function loadReportsForLocations(locationIds) {
+    const [salesResult, cashResult] = await Promise.all([
+      client.from("sales").select("*").in("location_id", locationIds).order("timestamp"),
+      client.from("cash_balances").select("*").in("location_id", locationIds)
+    ]);
+    if (salesResult.error) throw salesResult.error;
+    if (cashResult.error) throw cashResult.error;
+    return {
+      sales: salesResult.data || [],
+      cashBalances: cashResult.data || []
+    };
+  }
+
   function saveState(locationId, data, settings) {
     return queued({ type: "state", locationId, data, settings });
   }
@@ -279,7 +292,7 @@
   }
 
   global.CloudStore = {
-    configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, updateLocation, loadLocation,
+    configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, updateLocation, loadLocation, loadReportsForLocations,
     saveState, saveCatalogToLocations, insertSale, saveCash, deleteCash, deleteSales,
     loadTimeTracking, clockIn, clockOut, saveEmployee, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue

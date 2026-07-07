@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260706-14">
+  <link rel="stylesheet" href="styles.css?v=20260707-2">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -161,6 +161,7 @@
           </details>
           <details class="admin-card admin-section" open>
             <summary><span><span class="eyebrow">ABRECHNUNG</span><strong>E-Mail</strong></span></summary>
+            <label>Standortabrechnung<select id="billingModeSelect"><option value="separate">Getrennt je ausgewähltem Standort</option><option value="combined">Gemeinsam für alle Standorte</option></select></label>
             <label>Abrechnungs-E-Mail 1<input id="billingEmailInput" type="email" placeholder="abrechnung@beispiel.at"></label>
             <label>Zweite Abrechnungs-E-Mail<input id="billingEmail2Input" type="email" placeholder="Optional"></label>
           </details>
@@ -180,9 +181,17 @@
             <div id="employeeAdminList" class="employee-admin-list"></div>
           </details>
           <details class="admin-card admin-section">
-            <summary><span><span class="eyebrow">EXCEL-IMPORT</span><strong>Sortiment importieren</strong></span></summary>
-            <p>Zeile 1: Kategorien · Spalte A: Artikel · Kreuzung: Preis</p>
-            <label class="file-button">Exceldatei auswählen<input id="excelImportInput" type="file" accept=".xlsx,.xls"></label>
+            <summary><span><span class="eyebrow">EXCEL</span><strong>Einstellungen importieren/exportieren</strong></span></summary>
+            <p>Wähle, welche Bereiche übernommen werden sollen. Kategorien enthalten die zugehörigen Artikel.</p>
+            <div class="checkbox-grid">
+              <label><input id="excelCatalogCheckbox" type="checkbox" checked> Kategorien inkl. Artikel</label>
+              <label><input id="excelEmployeesCheckbox" type="checkbox"> Mitarbeiter inkl. Stundensatz</label>
+            </div>
+            <div class="admin-button-row">
+              <button id="adminExcelExportButton" class="secondary-button" type="button">Excel exportieren</button>
+              <label class="file-button">Excel importieren<input id="excelImportInput" type="file" accept=".xlsx,.xls"></label>
+            </div>
+            <p class="settings-hint">Sortiment: Blatt „Sortiment“ mit Zeile 1 = Kategorien, Spalte A = Artikel. Mitarbeiter: Blatt „Mitarbeiter“ mit Name, Stundensatz, Aktiv.</p>
           </details>
           <details class="admin-card admin-section danger-card">
             <summary><span><span class="eyebrow">GEFAHRENZONE</span><strong>Daten löschen</strong></span></summary>
@@ -465,9 +474,9 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="config.js?v=20260706-11"></script>
-  <script src="cloud.js?v=20260706-11"></script>
-  <script src="xlsx-export.js?v=20260706-11"></script>
-  <script src="app.js?v=20260706-11"></script>
+  <script src="config.js?v=20260707-2"></script>
+  <script src="cloud.js?v=20260707-2"></script>
+  <script src="xlsx-export.js?v=20260707-2"></script>
+  <script src="app.js?v=20260707-2"></script>
 </body>
 </html>
