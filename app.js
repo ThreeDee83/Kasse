@@ -122,6 +122,30 @@ function isAdminUser() {
     || locations.some((location) => String(location.role || "").toLowerCase() === "admin");
 }
 
+function normalizeLocationList(list) {
+  const prepared = [];
+  const seen = new Set();
+  (list || []).forEach((location) => {
+    if (!location?.id || seen.has(location.id)) return;
+    const rawName = String(location.name ?? "").trim();
+    const invalidName = !rawName || rawName.toLowerCase() === "undefined" || rawName.toLowerCase() === "null";
+    prepared.push({
+      ...location,
+      name: rawName,
+      invalidName,
+      role: location.role || "staff"
+    });
+    seen.add(location.id);
+  });
+  const visibleLocations = prepared.some((location) => !location.invalidName)
+    ? prepared.filter((location) => !location.invalidName)
+    : prepared.slice(0, 1);
+  return visibleLocations.map(({ invalidName, ...location }) => ({
+    ...location,
+    name: location.name || "Standort"
+  }));
+}
+
 function renderAll() {
   applyTheme();
   renderRoleAccess();
@@ -151,6 +175,7 @@ function applyTheme() {
 
 function renderLocationSelector() {
   const selector = $("#locationSelector");
+  locations = normalizeLocationList(locations);
   selector.innerHTML = locations.map((location) =>
     `<option value="${location.id}">${escapeHtml(location.name)}</option>`
   ).join("");
@@ -200,7 +225,7 @@ async function refreshLocationMemberships() {
   try {
     const updatedLocations = await CloudStore.locations();
     if (!updatedLocations.length) return;
-    locations = updatedLocations;
+    locations = normalizeLocationList(updatedLocations);
     const currentLocation = locations.find((location) => location.id === currentLocationId);
     if (!currentLocation) {
       await switchLocation(locations[0].id);
@@ -277,10 +302,10 @@ async function startCloudSession() {
   if (!session) return false;
   currentUserId = session.user.id;
   currentUserEmail = session.user.email || "";
-  locations = await CloudStore.locations();
+  locations = normalizeLocationList(await CloudStore.locations());
   if (!locations.length) {
     await CloudStore.createLocation("Hauptstandort");
-    locations = await CloudStore.locations();
+    locations = normalizeLocationList(await CloudStore.locations());
   }
   const preferred = locations.some((location) => location.id === currentLocationId)
     ? currentLocationId
@@ -304,7 +329,9 @@ function startLocalMode() {
   } catch (_) {
     locations = [];
   }
+  locations = normalizeLocationList(locations);
   if (!locations.length) locations = [{ id: "local", name: "Lokaler Standort", role: "admin" }];
+  localStorage.setItem("kassenraum-local-locations", JSON.stringify(locations));
   currentLocationId = locations.some((location) => location.id === currentLocationId) ? currentLocationId : locations[0].id;
   loadLocalLocation(currentLocationId);
   showApplication();
@@ -983,8 +1010,10 @@ function renderEmployeeAdministration() {
       <label>Stundensatz (€)<input class="employee-edit-rate" type="number" min="0" step="0.01" value="${employee.hourlyRate.toFixed(2)}"></label>
       <label class="employee-active"><input class="employee-edit-active" type="checkbox" ${employee.active ? "checked" : ""}> Aktiv</label>
       <button class="secondary-button save-employee" type="button">Speichern</button>
+      <button class="danger-button delete-employee" type="button">Entfernen</button>
     </div>`).join("") : `<div class="list-empty">Noch keine Mitarbeiter vorhanden.</div>`;
   $$(".save-employee").forEach((button) => button.addEventListener("click", () => saveExistingEmployee(button.closest(".employee-admin-row"))));
+  $$(".delete-employee").forEach((button) => button.addEventListener("click", () => removeEmployee(button.closest(".employee-admin-row").dataset.id)));
 }
 
 function renderTimeAdministration() {
@@ -1148,6 +1177,39 @@ async function saveExistingEmployee(row) {
     showToast("Mitarbeiter gespeichert");
   } catch (error) {
     showToast(error.message || "Mitarbeiter konnte nicht gespeichert werden");
+  }
+}
+
+async function removeEmployee(employeeId) {
+  if (!isAdminUser()) return;
+  const employee = employeeForTime(employeeId);
+  if (!employee) return;
+  const entryCount = timeEntries.filter((entry) => entry.employeeId === employeeId).length;
+  const bonusCount = employeeBonuses.filter((bonus) => bonus.employeeId === employeeId).length;
+  const openEntry = timeEntries.some((entry) => entry.employeeId === employeeId && !entry.clockOut);
+  const warning = [
+    `Mitarbeiter „${employee.name}“ wirklich entfernen?`,
+    entryCount || bonusCount
+      ? `Dabei werden ${entryCount} Stempelzeit(en) und ${bonusCount} Bonus-Eintrag/Einträge dieses Mitarbeiters gelöscht.`
+      : "Es sind keine Stempelzeiten oder Boni für diesen Mitarbeiter vorhanden.",
+    openEntry ? "Der Mitarbeiter ist aktuell eingestempelt." : "",
+    "Wenn du die Historie behalten möchtest, deaktiviere den Mitarbeiter stattdessen."
+  ].filter(Boolean).join("\n\n");
+  if (!confirm(warning)) return;
+  try {
+    if (localMode) {
+      employees = employees.filter((item) => item.id !== employeeId);
+      timeEntries = timeEntries.filter((entry) => entry.employeeId !== employeeId);
+      employeeBonuses = employeeBonuses.filter((bonus) => bonus.employeeId !== employeeId);
+      persistLocalTimeTracking();
+    } else {
+      await CloudStore.deleteEmployee(employeeId);
+      await reloadTimeTracking();
+    }
+    renderTimeTracking();
+    showToast("Mitarbeiter wurde entfernt");
+  } catch (error) {
+    showToast(error.message || "Mitarbeiter konnte nicht entfernt werden");
   }
 }
 
@@ -1627,7 +1689,7 @@ async function updateLocationName(locationId) {
       localStorage.setItem("kassenraum-local-locations", JSON.stringify(locations));
     } else {
       await CloudStore.updateLocation(locationId, name);
-      locations = await CloudStore.locations();
+      locations = normalizeLocationList(await CloudStore.locations());
     }
     renderAll();
     showToast("Standortname wurde gespeichert");
@@ -1655,7 +1717,7 @@ async function deleteLocation(locationId) {
       localStorage.setItem("kassenraum-local-locations", JSON.stringify(locations));
     } else {
       await CloudStore.deleteLocation(locationId);
-      locations = await CloudStore.locations();
+      locations = normalizeLocationList(await CloudStore.locations());
     }
 
     if (currentLocationId === locationId) {
@@ -1678,6 +1740,21 @@ async function deleteRevenueData() {
   persistCashBalances();
   renderReport();
   showToast("Umsatzdaten wurden gelöscht");
+}
+
+async function resetTimeTrackingData() {
+  if (!isAdminUser()) return;
+  if (!confirm("Alle Stempelzeiten und Tagesboni unwiderruflich löschen? Mitarbeiter und Stundensätze bleiben erhalten.")) return;
+  try {
+    if (!localMode) await CloudStore.deleteTimeTracking();
+    timeEntries = [];
+    employeeBonuses = [];
+    persistLocalTimeTracking();
+    renderTimeTracking();
+    showToast("Zeiterfassung wurde zurückgesetzt");
+  } catch (error) {
+    showToast(error.message || "Zeiterfassung konnte nicht zurückgesetzt werden");
+  }
 }
 
 function showToast(message) {
@@ -1768,7 +1845,7 @@ $("#createLocationButton").addEventListener("click", async (event) => {
       await switchLocation(location.id);
     } else {
       const id = await CloudStore.createLocation(name);
-      locations = await CloudStore.locations();
+      locations = normalizeLocationList(await CloudStore.locations());
       $("#newLocationInput").value = "";
       await switchLocation(id);
     }
@@ -1787,6 +1864,7 @@ $("#excelImportInput").addEventListener("change", async (event) => {
   event.target.value = "";
 });
 $("#deleteSalesButton").addEventListener("click", deleteRevenueData);
+$("#resetTimeTrackingButton").addEventListener("click", resetTimeTrackingData);
 $("#logoutButton").addEventListener("click", logout);
 $("#topLogoutButton").addEventListener("click", logout);
 $("#editorForm").addEventListener("submit", saveEditor);

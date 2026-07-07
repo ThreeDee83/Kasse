@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260706-11">
+  <link rel="stylesheet" href="styles.css?v=20260706-13">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -155,22 +155,22 @@
 
       <section id="generalTab" class="settings-content hidden">
         <div class="admin-grid">
-          <article class="admin-card">
-            <p class="eyebrow">DARSTELLUNG</p><h2>Farbschema</h2>
+          <details class="admin-card admin-section" open>
+            <summary><span><span class="eyebrow">DARSTELLUNG</span><strong>Farbschema</strong></span></summary>
             <label>Modus<select id="themeSelect"><option value="dark">Dark Mode</option><option value="light">Light Mode</option></select></label>
-          </article>
-          <article class="admin-card">
-            <p class="eyebrow">ABRECHNUNG</p><h2>E-Mail</h2>
+          </details>
+          <details class="admin-card admin-section" open>
+            <summary><span><span class="eyebrow">ABRECHNUNG</span><strong>E-Mail</strong></span></summary>
             <label>Abrechnungs-E-Mail 1<input id="billingEmailInput" type="email" placeholder="abrechnung@beispiel.at"></label>
             <label>Zweite Abrechnungs-E-Mail<input id="billingEmail2Input" type="email" placeholder="Optional"></label>
-          </article>
-          <article class="admin-card">
-            <p class="eyebrow">STANDORTE</p><h2>Standorte verwalten</h2>
+          </details>
+          <details class="admin-card admin-section">
+            <summary><span><span class="eyebrow">STANDORTE</span><strong>Standorte verwalten</strong></span></summary>
             <div class="inline-form"><input id="newLocationInput" type="text" placeholder="Standortname"><button id="createLocationButton" class="secondary-button">Anlegen</button></div>
             <div id="locationAdminList" class="location-admin-list"></div>
-          </article>
-          <article class="admin-card employee-settings-card">
-            <p class="eyebrow">MITARBEITER</p><h2>Gemeinsamer Mitarbeiterstamm</h2>
+          </details>
+          <details class="admin-card admin-section employee-settings-card" open>
+            <summary><span><span class="eyebrow">MITARBEITER</span><strong>Gemeinsamer Mitarbeiterstamm</strong></span></summary>
             <p>Diese Namen stehen bei allen Gruppenlogins und an allen Standorten zum Stempeln bereit.</p>
             <form id="addEmployeeForm" class="time-inline-form">
               <label>Name<input id="employeeNameInput" type="text" required placeholder="Vor- und Nachname"></label>
@@ -178,22 +178,25 @@
               <button class="primary-button" type="submit">Anlegen</button>
             </form>
             <div id="employeeAdminList" class="employee-admin-list"></div>
-          </article>
-          <article class="admin-card">
-            <p class="eyebrow">EXCEL-IMPORT</p><h2>Sortiment importieren</h2>
+          </details>
+          <details class="admin-card admin-section">
+            <summary><span><span class="eyebrow">EXCEL-IMPORT</span><strong>Sortiment importieren</strong></span></summary>
             <p>Zeile 1: Kategorien · Spalte A: Artikel · Kreuzung: Preis</p>
             <label class="file-button">Exceldatei auswählen<input id="excelImportInput" type="file" accept=".xlsx,.xls"></label>
-          </article>
-          <article class="admin-card danger-card">
-            <p class="eyebrow">GEFAHRENZONE</p><h2>Umsatzdaten</h2>
+          </details>
+          <details class="admin-card admin-section danger-card">
+            <summary><span><span class="eyebrow">GEFAHRENZONE</span><strong>Daten löschen</strong></span></summary>
             <p>Löscht Verkäufe und Kassenstände dieses Standorts unwiderruflich.</p>
             <button id="deleteSalesButton" class="danger-button">Umsatzdaten löschen</button>
-          </article>
-          <article class="admin-card">
-            <p class="eyebrow">KONTO</p><h2>Sitzung</h2>
+            <div class="danger-divider"></div>
+            <p>Löscht alle Stempelzeiten und Tagesboni. Mitarbeiter und Stundensätze bleiben erhalten.</p>
+            <button id="resetTimeTrackingButton" class="danger-button">Zeiterfassung zurücksetzen</button>
+          </details>
+          <details class="admin-card admin-section">
+            <summary><span><span class="eyebrow">KONTO</span><strong>Sitzung</strong></span></summary>
             <p id="currentUserLabel">Lokaler Modus</p>
             <button id="logoutButton" class="secondary-button">Abmelden</button>
-          </article>
+          </details>
         </div>
       </section>
     </main>

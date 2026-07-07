@@ -90,7 +90,9 @@
       .select("role, location:locations(id,name)")
       .order("created_at");
     if (error) throw error;
-    return (data || []).map((entry) => ({ ...entry.location, role: entry.role }));
+    return (data || [])
+      .filter((entry) => entry.location?.id)
+      .map((entry) => ({ ...entry.location, role: entry.role }));
   }
 
   async function createLocation(name) {
@@ -207,6 +209,11 @@
     }
   }
 
+  async function deleteEmployee(employeeId) {
+    const { error } = await client.from("employees").delete().eq("id", employeeId);
+    if (error) throw error;
+  }
+
   async function addTimeEntry(locationId, entry) {
     const { error } = await client.from("time_entries").insert({
       location_id: locationId,
@@ -250,6 +257,13 @@
     if (error) throw error;
   }
 
+  async function deleteTimeTracking() {
+    const { error: bonusError } = await client.from("employee_bonuses").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (bonusError) throw bonusError;
+    const { error: entryError } = await client.from("time_entries").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (entryError) throw entryError;
+  }
+
   function subscribe(locationId, callback, userId, membershipCallback, timeCallback) {
     if (channel) client.removeChannel(channel);
     channel = client.channel(`location-${locationId}`)
@@ -267,7 +281,7 @@
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, updateLocation, loadLocation,
     saveState, saveCatalogToLocations, insertSale, saveCash, deleteCash, deleteSales,
-    loadTimeTracking, clockIn, clockOut, saveEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus,
+    loadTimeTracking, clockIn, clockOut, saveEmployee, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue
   };
   global.addEventListener("online", flushQueue);

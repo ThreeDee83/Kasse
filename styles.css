@@ -271,6 +271,13 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .admin-card { padding: 21px; border: 1px solid var(--line); border-radius: 14px; background: var(--white); }
 .admin-card h2 { margin-bottom: 16px; font-size: 17px; }
 .admin-card > p:not(.eyebrow) { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.admin-section summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: -2px 0 16px; cursor: pointer; list-style: none; }
+.admin-section summary::-webkit-details-marker { display: none; }
+.admin-section summary::after { content: "▾"; color: var(--muted); font-size: 16px; transition: transform .18s ease; }
+.admin-section:not([open]) summary { margin-bottom: -2px; }
+.admin-section:not([open]) summary::after { transform: rotate(-90deg); }
+.admin-section summary strong { display: block; margin-top: 4px; font-size: 17px; color: var(--ink); }
+.admin-section label:first-of-type { margin-top: 0; }
 .inline-form { display: flex; align-items: end; gap: 8px; }
 .inline-form input { margin: 0; }
 .inline-form button { flex: 0 0 auto; }
@@ -278,6 +285,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .file-button input { display: none; }
 .danger-card { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
 .danger-button { padding: 10px 13px; border: 1px solid var(--danger); border-radius: 9px; background: transparent; color: var(--danger); cursor: pointer; font-weight: 700; }
+.danger-divider { height: 1px; margin: 16px 0; background: var(--line); }
 .location-admin-list { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
 .location-admin-row { display: flex; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
 .location-admin-row input { min-width: 0; flex: 1; margin: 0; padding: 8px 9px; font-size: 13px; }
@@ -314,10 +322,11 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .time-form-grid { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 10px; }
 .time-form-grid button { justify-self: start; }
 .employee-admin-list, .bonus-admin-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
-.employee-admin-row { display: grid; grid-template-columns: minmax(140px, 1fr) 125px auto auto; align-items: end; gap: 8px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.employee-admin-row { display: grid; grid-template-columns: minmax(140px, 1fr) 125px auto auto auto; align-items: end; gap: 8px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .employee-active { display: flex; align-items: center; gap: 6px; padding-bottom: 10px; white-space: nowrap; }
 .time-card .employee-active input { width: auto; margin: 0; accent-color: var(--green); }
-.employee-admin-row .secondary-button { padding: 10px 12px; }
+.employee-admin-row .secondary-button,
+.employee-admin-row .danger-button { padding: 10px 12px; }
 .bonus-admin-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 12px; }
 .bonus-admin-row small { color: var(--muted); }
 .bonus-admin-row .danger-button { padding: 6px 8px; font-size: 11px; }
@@ -412,7 +421,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .time-filters > div { grid-column: 1 / -1; }
   .time-kpis { grid-template-columns: 1fr 1fr; }
   .time-admin-grid { grid-template-columns: 1fr; }
-  .employee-admin-row { grid-template-columns: 1fr 120px; }
+  .employee-admin-row { grid-template-columns: 1fr 120px auto; }
   .employee-active { padding-bottom: 0; }
 }
 @media (max-width: 500px) {

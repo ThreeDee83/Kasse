@@ -329,11 +329,19 @@ begin
   return open_entry;
 end $$;
 
+revoke all on function public.is_location_member(uuid) from public;
+revoke all on function public.is_location_admin(uuid) from public;
+revoke all on function public.is_business_user() from public;
+revoke all on function public.is_any_admin() from public;
 revoke all on function public.create_location(text) from public;
 revoke all on function public.delete_location(uuid) from public;
 revoke all on function public.sync_location_memberships() from public;
 revoke all on function public.clock_in_employee(uuid, uuid) from public;
 revoke all on function public.clock_out_employee(uuid) from public;
+grant execute on function public.is_location_member(uuid) to authenticated;
+grant execute on function public.is_location_admin(uuid) to authenticated;
+grant execute on function public.is_business_user() to authenticated;
+grant execute on function public.is_any_admin() to authenticated;
 grant execute on function public.create_location(text) to authenticated;
 grant execute on function public.delete_location(uuid) to authenticated;
 grant execute on function public.sync_location_memberships() to authenticated;
