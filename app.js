@@ -654,7 +654,9 @@ function completePayment(event) {
 
 function buildExportPayload() {
   const buildSheet = (reportSales, { dateLabel, sheetName, cashBalance = null }) => {
-    const categoryNames = data.categories.map((category) => category.name);
+    const categoryNames = data.categories
+      .filter((category) => data.products.some((product) => product.categoryId === category.id && Number(product.price) <= 0))
+      .map((category) => category.name);
     const categorySet = new Set(categoryNames);
     const rows = new Map();
 
@@ -669,7 +671,7 @@ function buildExportPayload() {
       const row = ensureRow(item.name);
       row.total += item.quantity;
       row.amount += item.price * item.quantity;
-      if (item.price > 0) row.sold += item.quantity;
+      if (Number(item.price) > 0) row.sold += item.quantity;
       else {
         const categoryName = item.categoryName || "Ohne Kategorie";
         row.categoryCounts[categoryName] = (row.categoryCounts[categoryName] || 0) + item.quantity;
