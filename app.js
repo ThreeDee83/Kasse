@@ -349,10 +349,7 @@ function visibleCategories() {
 function renderCategories() {
   const nav = $("#categoryNav");
   const categories = visibleCategories();
-  const visibleIds = new Set(categories.map((category) => category.id));
-  const visibleProductCount = data.products.filter((product) => visibleIds.has(product.categoryId)).length;
-  const allButton = categoryButton("all", "Alle Artikel", "#183F37", visibleProductCount);
-  nav.innerHTML = allButton + categories.map((category) =>
+  nav.innerHTML = categories.map((category) =>
     categoryButton(category.id, category.name, category.color, data.products.filter((product) => product.categoryId === category.id).length)
   ).join("");
   $("#categoryCount").textContent = categories.length;

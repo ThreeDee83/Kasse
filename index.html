@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260707-2">
+  <link rel="stylesheet" href="styles.css?v=20260707-3">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -22,7 +22,7 @@
       <label>Passwort<input id="loginPassword" type="password" autocomplete="current-password" required placeholder="••••••••"></label>
       <p id="loginError" class="login-error hidden"></p>
       <button type="submit" class="primary-button">Anmelden</button>
-      <button type="button" id="localModeButton" class="secondary-button">Lokalen Testmodus verwenden</button>
+      <button type="button" id="localModeButton" class="secondary-button hidden">Lokalen Testmodus verwenden</button>
       <small id="configHint" class="config-hint hidden">Supabase ist noch nicht konfiguriert. Trage URL und Anon-Key in config.js ein.</small>
     </form>
   </section>
@@ -474,9 +474,9 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="config.js?v=20260707-2"></script>
-  <script src="cloud.js?v=20260707-2"></script>
-  <script src="xlsx-export.js?v=20260707-2"></script>
-  <script src="app.js?v=20260707-2"></script>
+  <script src="config.js?v=20260707-3"></script>
+  <script src="cloud.js?v=20260707-3"></script>
+  <script src="xlsx-export.js?v=20260707-3"></script>
+  <script src="app.js?v=20260707-3"></script>
 </body>
 </html>
