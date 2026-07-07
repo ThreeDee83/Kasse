@@ -81,9 +81,9 @@ function loadCashBalances() {
 
 function loadAppSettings() {
   try {
-    return { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", ...(JSON.parse(localStorage.getItem("kassenraum-settings")) || {}) };
+    return { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", startCategoryId: "first", ...(JSON.parse(localStorage.getItem("kassenraum-settings")) || {}) };
   } catch (_) {
-    return { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate" };
+    return { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", startCategoryId: "first" };
   }
 }
 
@@ -208,7 +208,7 @@ function loadLocalLocation(locationId) {
   data = read("kassenraum-data", structuredClone(DEFAULT_DATA));
   sales = read("kassenraum-sales", []);
   cashBalances = read("kassenraum-cash-balances", {});
-  appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", ...read("kassenraum-settings", {}) };
+  appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", startCategoryId: "first", ...read("kassenraum-settings", {}) };
   const readGlobal = (key, fallback) => {
     try {
       return JSON.parse(localStorage.getItem(key)) ?? fallback;
@@ -262,7 +262,7 @@ async function switchLocation(locationId, background = false) {
     const isNewLocation = !remoteData?.categories?.length;
     const shouldMigrate = isNewLocation && !localStorage.getItem("kassenraum-cloud-migrated");
     data = isNewLocation ? structuredClone(shouldMigrate ? legacySnapshot.data : DEFAULT_DATA) : remoteData;
-    appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", ...(shouldMigrate ? legacySnapshot.settings : remote.state?.settings || {}) };
+    appSettings = { theme: "dark", billingEmail: "", billingEmail2: "", billingMode: "separate", startCategoryId: "first", ...(shouldMigrate ? legacySnapshot.settings : remote.state?.settings || {}) };
     sales = shouldMigrate && !remote.sales.length ? structuredClone(legacySnapshot.sales) : remote.sales;
     cashBalances = shouldMigrate && !Object.keys(remote.cashBalances).length ? structuredClone(legacySnapshot.cashBalances) : remote.cashBalances;
     persistSales();
@@ -353,7 +353,10 @@ function firstVisibleCategoryId() {
 }
 
 function selectInitialCategory() {
-  selectedCategory = firstVisibleCategoryId();
+  const configured = appSettings.startCategoryId || "first";
+  selectedCategory = configured !== "first" && visibleCategories().some((category) => category.id === configured)
+    ? configured
+    : firstVisibleCategoryId();
 }
 
 function ensureSelectableCategory() {
@@ -1571,6 +1574,12 @@ function renderSettings() {
   $$(".delete-product").forEach((button) => button.addEventListener("click", () => deleteProduct(button.dataset.id)));
   setupCategoryDragAndDrop();
   $("#themeSelect").value = appSettings.theme || "dark";
+  $("#startCategorySelect").innerHTML = `<option value="first">Erste sichtbare Kategorie</option>${visibleCategories().map((category) =>
+    `<option value="${category.id}">${escapeHtml(category.name)}</option>`
+  ).join("")}`;
+  $("#startCategorySelect").value = visibleCategories().some((category) => category.id === appSettings.startCategoryId)
+    ? appSettings.startCategoryId
+    : "first";
   $("#billingModeSelect").value = appSettings.billingMode || "separate";
   $("#billingEmailInput").value = appSettings.billingEmail || "";
   $("#billingEmail2Input").value = appSettings.billingEmail2 || "";
@@ -2143,6 +2152,32 @@ function escapeHtml(value) {
   }[character]));
 }
 
+async function deleteRevenueData() {
+  if (!isAdminUser()) return;
+  const hasRevenueData = sales.length || Object.keys(cashBalances).length;
+  if (hasRevenueData && confirm("Vor dem Löschen ein Umsatzbackup downloaden?")) {
+    try {
+      downloadRevenueBackup();
+    } catch (error) {
+      showToast(error.message || "Umsatzbackup konnte nicht erstellt werden");
+      return;
+    }
+  }
+  if (!confirm("Umsatzdaten und Kassenstände dieses Standorts jetzt unwiderruflich löschen?")) return;
+  try {
+    if (!localMode) await CloudStore.deleteSales(currentLocationId);
+    sales = [];
+    cashBalances = {};
+    persistSales();
+    persistCashBalances();
+    await refreshReportScope(true);
+    renderReport();
+    showToast("Umsatzdaten wurden gelöscht");
+  } catch (error) {
+    showToast(error.message || "Umsatzdaten konnten nicht gelöscht werden");
+  }
+}
+
 $("#dateChip").textContent = new Intl.DateTimeFormat("de-AT", { weekday: "long", day: "2-digit", month: "long" }).format(new Date());
 $("#settingsButton").addEventListener("click", () => openSettings());
 $("#reportsButton").addEventListener("click", openReports);
@@ -2182,6 +2217,14 @@ $("#themeSelect").addEventListener("change", (event) => {
   appSettings.theme = event.target.value;
   persist();
   applyTheme();
+});
+$("#startCategorySelect").addEventListener("change", (event) => {
+  appSettings.startCategoryId = event.target.value;
+  persist();
+  selectInitialCategory();
+  renderCategories();
+  renderProducts();
+  showToast("Erstansicht gespeichert");
 });
 $("#billingModeSelect").addEventListener("change", async (event) => {
   appSettings.billingMode = event.target.value;
