@@ -43,6 +43,7 @@ let selectedCategory = "all";
 let editor = { type: null, id: null, color: COLORS[0], copySourceId: null };
 let reportFilter = "today";
 let pendingPaymentTotal = 0;
+let paymentReturnCategory = null;
 let combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
 let toastTimer;
 let cloudSaveTimer;
@@ -297,7 +298,7 @@ async function switchLocation(locationId, background = false) {
     loadLocalLocation(locationId);
     showToast("Offline – lokaler Datenstand wird verwendet");
   }
-  selectedCategory = "all";
+  selectInitialCategory();
   renderAll();
   if (!$("#timeClockView").classList.contains("hidden")) await reloadTimeTracking();
 }
@@ -339,6 +340,7 @@ function startLocalMode() {
   localStorage.setItem("kassenraum-local-locations", JSON.stringify(locations));
   currentLocationId = locations.some((location) => location.id === currentLocationId) ? currentLocationId : locations[0].id;
   loadLocalLocation(currentLocationId);
+  selectInitialCategory();
   showApplication();
 }
 
@@ -346,9 +348,28 @@ function visibleCategories() {
   return data.categories.filter((category) => !category.hidden);
 }
 
+function firstVisibleCategoryId() {
+  return visibleCategories()[0]?.id || "all";
+}
+
+function selectInitialCategory() {
+  selectedCategory = firstVisibleCategoryId();
+}
+
+function ensureSelectableCategory() {
+  if (selectedCategory === "all") {
+    if (visibleCategories().length) selectedCategory = firstVisibleCategoryId();
+    return;
+  }
+  if (!visibleCategories().some((category) => category.id === selectedCategory)) {
+    selectedCategory = firstVisibleCategoryId();
+  }
+}
+
 function renderCategories() {
   const nav = $("#categoryNav");
   const categories = visibleCategories();
+  ensureSelectableCategory();
   nav.innerHTML = categories.map((category) =>
     categoryButton(category.id, category.name, category.color, data.products.filter((product) => product.categoryId === category.id).length)
   ).join("");
@@ -693,6 +714,7 @@ function updatePaymentChange() {
 function openPaymentDialog() {
   pendingPaymentTotal = cartTotal();
   if (!cart.length || pendingPaymentTotal < 0) return;
+  paymentReturnCategory = selectedCategory;
   $("#paymentStep").classList.remove("hidden");
   $("#paymentSuccess").classList.add("hidden");
   $("#paymentTotal").textContent = euro(pendingPaymentTotal);
@@ -2231,6 +2253,14 @@ $("#cancelPaymentButton").addEventListener("click", () => $("#checkoutDialog").c
 $("#paymentForm").addEventListener("submit", completePayment);
 $("#newOrderButton").addEventListener("click", () => {
   $("#checkoutDialog").close();
+  if (paymentReturnCategory && visibleCategories().some((category) => category.id === paymentReturnCategory)) {
+    selectedCategory = paymentReturnCategory;
+  } else {
+    selectInitialCategory();
+  }
+  paymentReturnCategory = null;
+  renderCategories();
+  renderProducts();
 });
 
 $("#loginForm").addEventListener("submit", async (event) => {
