@@ -492,7 +492,7 @@ function closeSettings() {
   renderAll();
 }
 
-async function openReports() {
+async function openReports(options = {}) {
   $("#posView").classList.add("hidden");
   $("#settingsView").classList.add("hidden");
   $("#timeClockView").classList.add("hidden");
@@ -501,6 +501,11 @@ async function openReports() {
   $("#reportDateInput").value = localDateKey(new Date());
   await refreshReportScope(true);
   renderReport();
+  if (options.showReceiptHistory) {
+    const history = $(".receipt-history-card");
+    history.open = true;
+    setTimeout(() => history.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
   window.scrollTo(0, 0);
 }
 
@@ -618,6 +623,73 @@ function aggregateSales(entries) {
   };
 }
 
+function renderReceiptHistory(reportSales) {
+  const sortedSales = [...reportSales].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  $("#receiptHistoryCount").textContent = `${sortedSales.length} ${sortedSales.length === 1 ? "Bon" : "Bons"}`;
+  $("#receiptHistoryBody").innerHTML = sortedSales.map((sale) => {
+    const items = (sale.items || []).map((item) =>
+      `${escapeHtml(item.name)} <small>${Number(item.quantity || 0)} × ${euro(Number(item.price || 0))}${item.categoryName ? ` · ${escapeHtml(item.categoryName)}` : ""}</small>`
+    ).join("");
+    return `<tr class="receipt-history-row" data-sale-id="${escapeHtml(sale.id || "")}" tabindex="0" role="button" aria-label="Bon anzeigen">
+      <td><strong>${escapeHtml(formatDateTime(sale.timestamp))}</strong><small>${escapeHtml(sale.id || "")}</small></td>
+      <td>${escapeHtml(sale.locationName || locations.find((location) => location.id === currentLocationId)?.name || "Standort")}</td>
+      <td class="receipt-items">${items}</td>
+      <td class="number"><strong>${euro(Number(sale.total || 0))}</strong></td>
+    </tr>`;
+  }).join("");
+  $$(".receipt-history-row").forEach((row) => {
+    row.addEventListener("click", () => openReceiptDialog(row.dataset.saleId));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openReceiptDialog(row.dataset.saleId);
+      }
+    });
+  });
+  $("#emptyReceiptHistory").classList.toggle("hidden", sortedSales.length > 0);
+  $(".receipt-history-card .report-table-scroll").classList.toggle("hidden", sortedSales.length === 0);
+}
+
+function saleLocationName(sale) {
+  return sale?.locationName || locations.find((location) => location.id === (sale?.locationId || currentLocationId))?.name || "Standort";
+}
+
+function findSaleForReceipt(saleId) {
+  return reportSourceSales().find((sale) => String(sale.id || "") === String(saleId || ""));
+}
+
+function openReceiptDialog(saleId) {
+  const sale = findSaleForReceipt(saleId);
+  if (!sale) {
+    showToast("Bon wurde nicht gefunden");
+    return;
+  }
+  const rows = (sale.items || []).map((item) => {
+    const quantity = Number(item.quantity || 0);
+    const price = Number(item.price || 0);
+    return `<tr>
+      <td><strong>${escapeHtml(item.name || "")}</strong><small>${escapeHtml(item.categoryName || "Ohne Kategorie")}</small></td>
+      <td class="number">${quantity}</td>
+      <td class="number">${euro(price)}</td>
+      <td class="number"><strong>${euro(quantity * price)}</strong></td>
+    </tr>`;
+  }).join("");
+  $("#receiptDialogTitle").textContent = `Bon ${formatDateTime(sale.timestamp)}`;
+  $("#receiptDialogContent").innerHTML = `
+    <div class="receipt-detail-meta">
+      <span><strong>Standort</strong>${escapeHtml(saleLocationName(sale))}</span>
+      <span><strong>Bon-ID</strong>${escapeHtml(sale.id || "")}</span>
+      <span><strong>Summe</strong>${euro(Number(sale.total || 0))}</span>
+    </div>
+    <div class="report-table-scroll">
+      <table class="report-table receipt-detail-table">
+        <thead><tr><th>Artikel</th><th class="number">Anzahl</th><th class="number">Preis</th><th class="number">Summe</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  $("#receiptDialog").showModal();
+}
+
 function renderReport() {
   $$(".report-filter").forEach((button) => button.classList.toggle("active", button.dataset.filter === reportFilter));
   const isDate = reportFilter === "date";
@@ -647,6 +719,7 @@ function renderReport() {
   `).join("");
   $("#emptyReport").classList.toggle("hidden", summary.products.length > 0);
   $(".report-table-scroll").classList.toggle("hidden", summary.products.length === 0);
+  renderReceiptHistory(reportSales);
   $("#cashBalancePanel").classList.toggle("hidden", isAll || useCombinedReports());
   if (!isAll && !useCombinedReports()) {
     const savedBalance = reportSourceCashBalances()[periodKey];
@@ -2181,6 +2254,7 @@ async function deleteRevenueData() {
 $("#dateChip").textContent = new Intl.DateTimeFormat("de-AT", { weekday: "long", day: "2-digit", month: "long" }).format(new Date());
 $("#settingsButton").addEventListener("click", () => openSettings());
 $("#reportsButton").addEventListener("click", openReports);
+$("#receiptHistoryButton").addEventListener("click", () => openReports({ showReceiptHistory: true }));
 $("#timeClockButton").addEventListener("click", openTimeClock);
 $("#brandHome").addEventListener("click", closeSettings);
 $("#backToPos").addEventListener("click", closeSettings);
@@ -2285,6 +2359,8 @@ $("#dialogCancel").addEventListener("click", () => $("#editorDialog").close());
 $("#timeEntryEditForm").addEventListener("submit", saveEditedTimeEntry);
 $("#timeEntryDialogClose").addEventListener("click", () => $("#timeEntryDialog").close());
 $("#timeEntryDialogCancel").addEventListener("click", () => $("#timeEntryDialog").close());
+$("#receiptDialogClose").addEventListener("click", () => $("#receiptDialog").close());
+$("#receiptDialogOk").addEventListener("click", () => $("#receiptDialog").close());
 $("#clearCartButton").addEventListener("click", () => { cart = []; renderCart(); });
 $("#checkoutButton").addEventListener("click", openPaymentDialog);
 $("#paymentAmountInput").addEventListener("input", updatePaymentChange);

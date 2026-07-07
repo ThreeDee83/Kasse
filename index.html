@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260707-5">
+  <link rel="stylesheet" href="styles.css?v=20260707-7">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -45,6 +45,10 @@
         <button class="report-button" id="reportsButton" aria-label="Abrechnung öffnen">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V2"/></svg>
           <span>Abrechnung</span>
+        </button>
+        <button class="report-button" id="receiptHistoryButton" aria-label="Bonverlauf öffnen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4V3Z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
+          <span>Bonverlauf</span>
         </button>
         <button class="report-button" id="timeClockButton" aria-label="Arbeitszeit öffnen">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
@@ -373,6 +377,20 @@
         </div>
         <div id="emptyReport" class="list-empty hidden">Für diesen Zeitraum wurden noch keine Verkäufe erfasst.</div>
       </section>
+
+      <details class="report-table-card receipt-history-card">
+        <summary class="report-table-header">
+          <div><h2>Bonverlauf</h2><p>Einzelne Bons des gewählten Zeitraums ein- und ausblenden.</p></div>
+          <span id="receiptHistoryCount"></span>
+        </summary>
+        <div class="report-table-scroll">
+          <table class="report-table receipt-history-table">
+            <thead><tr><th>Zeitpunkt</th><th>Standort</th><th>Artikel</th><th class="number">Summe</th></tr></thead>
+            <tbody id="receiptHistoryBody"></tbody>
+          </table>
+        </div>
+        <div id="emptyReceiptHistory" class="list-empty hidden">Keine Bons im gewählten Zeitraum.</div>
+      </details>
     </main>
   </div>
 
@@ -460,6 +478,17 @@
     </form>
   </dialog>
 
+  <dialog id="receiptDialog" class="editor-dialog receipt-dialog">
+    <div class="dialog-header">
+      <div><p class="eyebrow">BONANZEIGE</p><h2 id="receiptDialogTitle">Bon</h2></div>
+      <button type="button" class="dialog-close" id="receiptDialogClose" aria-label="Schließen">×</button>
+    </div>
+    <div id="receiptDialogContent" class="receipt-dialog-content"></div>
+    <div class="dialog-actions">
+      <button type="button" class="primary-button" id="receiptDialogOk">Schließen</button>
+    </div>
+  </dialog>
+
   <dialog id="rateChangeDialog" class="editor-dialog">
     <div class="dialog-header">
       <div><p class="eyebrow">STUNDENSATZ</p><h2>Vergangene Zeiten neu berechnen?</h2></div>
@@ -475,9 +504,9 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="config.js?v=20260707-5"></script>
-  <script src="cloud.js?v=20260707-5"></script>
-  <script src="xlsx-export.js?v=20260707-5"></script>
-  <script src="app.js?v=20260707-5"></script>
+  <script src="config.js?v=20260707-7"></script>
+  <script src="cloud.js?v=20260707-7"></script>
+  <script src="xlsx-export.js?v=20260707-7"></script>
+  <script src="app.js?v=20260707-7"></script>
 </body>
 </html>

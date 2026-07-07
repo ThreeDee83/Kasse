@@ -266,6 +266,21 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .report-table .number { text-align: right; font-variant-numeric: tabular-nums; }
 .report-table .zero-price { color: var(--green); }
 .report-table-card > .list-empty { margin: 16px; }
+.receipt-history-card { margin-top: 16px; }
+.receipt-history-card summary { cursor: pointer; list-style: none; }
+.receipt-history-card summary::-webkit-details-marker { display: none; }
+.receipt-history-card summary::after { content: "▾"; color: var(--muted); transition: transform .18s ease; }
+.receipt-history-card:not([open]) summary::after { transform: rotate(-90deg); }
+.receipt-history-card[open] summary { border-bottom: 1px solid var(--line); }
+.receipt-history-row { cursor: pointer; }
+.receipt-history-row:hover td,
+.receipt-history-row:focus td { background: var(--panel-soft); }
+.receipt-items { min-width: 260px; }
+.receipt-items small { display: inline; margin-left: 5px; margin-right: 10px; white-space: nowrap; }
+.receipt-dialog { width: min(720px, calc(100% - 30px)); padding: 26px; }
+.receipt-detail-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.receipt-detail-meta span { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.receipt-detail-meta strong { display: block; margin-bottom: 4px; color: var(--ink); font-size: 11px; text-transform: uppercase; }
 
 .admin-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .admin-card { padding: 21px; border: 1px solid var(--line); border-radius: 14px; background: var(--white); }
@@ -443,6 +458,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .time-filters { grid-template-columns: 1fr; }
   .time-filters > div { grid-column: auto; }
   .time-kpis { grid-template-columns: 1fr; }
+  .receipt-detail-meta { grid-template-columns: 1fr; }
   .time-inline-form, .time-form-grid, .employee-admin-row { grid-template-columns: 1fr; }
   .time-entry-date-row { grid-template-columns: minmax(0, 1fr) minmax(0, .8fr); gap: 9px; }
   .time-form-grid button, .time-inline-form button { width: 100%; }
