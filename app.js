@@ -658,13 +658,47 @@ function findSaleForReceipt(saleId) {
   return reportSourceSales().find((sale) => String(sale.id || "") === String(saleId || ""));
 }
 
+async function persistCorrectedSale(sale) {
+  const localIndex = sales.findIndex((entry) => String(entry.id || "") === String(sale.id || ""));
+  if (!sale.items?.length) {
+    if (localIndex >= 0) sales.splice(localIndex, 1);
+    if (!localMode) await CloudStore.deleteSale(sale.id);
+  } else {
+    sale.total = sale.items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+    if (localIndex >= 0) sales[localIndex] = sale;
+    if (!localMode) await CloudStore.saveSale(sale.locationId || currentLocationId, sale);
+  }
+  persistSales();
+  await refreshReportScope(true);
+  renderReport();
+}
+
+async function removeReceiptPosition(saleId, itemIndex) {
+  const sale = findSaleForReceipt(saleId);
+  if (!sale || !sale.items?.[itemIndex]) {
+    showToast("Position wurde nicht gefunden");
+    return;
+  }
+  const item = sale.items[itemIndex];
+  if (!confirm(`Position „${item.name}“ aus diesem Bon löschen?`)) return;
+  try {
+    sale.items.splice(itemIndex, 1);
+    await persistCorrectedSale(sale);
+    if (sale.items.length) openReceiptDialog(sale.id);
+    else $("#receiptDialog").close();
+    showToast("Bonposition wurde gelöscht");
+  } catch (error) {
+    showToast(error.message || "Bonposition konnte nicht gelöscht werden");
+  }
+}
+
 function openReceiptDialog(saleId) {
   const sale = findSaleForReceipt(saleId);
   if (!sale) {
     showToast("Bon wurde nicht gefunden");
     return;
   }
-  const rows = (sale.items || []).map((item) => {
+  const rows = (sale.items || []).map((item, index) => {
     const quantity = Number(item.quantity || 0);
     const price = Number(item.price || 0);
     return `<tr>
@@ -672,6 +706,7 @@ function openReceiptDialog(saleId) {
       <td class="number">${quantity}</td>
       <td class="number">${euro(price)}</td>
       <td class="number"><strong>${euro(quantity * price)}</strong></td>
+      <td class="number"><button class="receipt-minus-button" data-sale-id="${escapeHtml(sale.id || "")}" data-item-index="${index}" title="Position löschen">−</button></td>
     </tr>`;
   }).join("");
   $("#receiptDialogTitle").textContent = `Bon ${formatDateTime(sale.timestamp)}`;
@@ -683,10 +718,13 @@ function openReceiptDialog(saleId) {
     </div>
     <div class="report-table-scroll">
       <table class="report-table receipt-detail-table">
-        <thead><tr><th>Artikel</th><th class="number">Anzahl</th><th class="number">Preis</th><th class="number">Summe</th></tr></thead>
+        <thead><tr><th>Artikel</th><th class="number">Anzahl</th><th class="number">Preis</th><th class="number">Summe</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+  $$(".receipt-minus-button").forEach((button) => button.addEventListener("click", () =>
+    removeReceiptPosition(button.dataset.saleId, Number(button.dataset.itemIndex))
+  ));
   $("#receiptDialog").showModal();
 }
 

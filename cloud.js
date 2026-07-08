@@ -149,7 +149,18 @@
   }
 
   function insertSale(locationId, sale) {
-    return queued({ type: "sale", sale: { ...sale, location_id: locationId } });
+    const { locationName, locationId: ignoredLocationId, ...cleanSale } = sale;
+    return queued({ type: "sale", sale: { ...cleanSale, location_id: locationId } });
+  }
+
+  function saveSale(locationId, sale) {
+    const { locationName, locationId: ignoredLocationId, ...cleanSale } = sale;
+    return queued({ type: "sale", sale: { ...cleanSale, location_id: locationId } });
+  }
+
+  async function deleteSale(saleId) {
+    const { error } = await client.from("sales").delete().eq("id", saleId);
+    if (error) throw error;
   }
 
   function saveCash(locationId, dateKey, balance) {
@@ -293,7 +304,7 @@
 
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, updateLocation, loadLocation, loadReportsForLocations,
-    saveState, saveCatalogToLocations, insertSale, saveCash, deleteCash, deleteSales,
+    saveState, saveCatalogToLocations, insertSale, saveSale, deleteSale, saveCash, deleteCash, deleteSales,
     loadTimeTracking, clockIn, clockOut, saveEmployee, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue
   };
