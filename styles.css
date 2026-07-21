@@ -272,11 +272,17 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .receipt-history-card summary::after { content: "▾"; color: var(--muted); transition: transform .18s ease; }
 .receipt-history-card:not([open]) summary::after { transform: rotate(-90deg); }
 .receipt-history-card[open] summary { border-bottom: 1px solid var(--line); }
+.receipt-history-tools { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.receipt-location-filter { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.receipt-location-filter select { min-width: 160px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); color: var(--ink); font: inherit; text-transform: none; letter-spacing: 0; }
 .receipt-history-row { cursor: pointer; }
 .receipt-history-row:hover td,
 .receipt-history-row:focus td { background: var(--panel-soft); }
 .receipt-items { min-width: 260px; }
 .receipt-items small { display: inline; margin-left: 5px; margin-right: 10px; white-space: nowrap; }
+.receipt-item-canceled { opacity: .62; text-decoration: line-through; }
+.receipt-storno-badge { display: inline-block; margin-left: 8px; padding: 2px 7px; border: 1px solid var(--danger); border-radius: 999px; color: var(--danger); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; text-decoration: none; }
+.receipt-detail-table tr.is-canceled td { color: var(--muted); background: color-mix(in srgb, var(--danger) 6%, transparent); }
 .receipt-dialog { width: min(720px, calc(100% - 30px)); padding: 26px; }
 .receipt-detail-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
 .receipt-detail-meta span { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
@@ -426,6 +432,8 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .report-button span { display: none; }
   .reports-heading { align-items: start; }
   .report-kpis { grid-template-columns: 1fr; }
+  .receipt-history-tools { align-items: flex-end; flex-direction: column; gap: 8px; }
+  .receipt-location-filter { align-items: stretch; flex-direction: column; gap: 4px; }
   .cash-balance-panel { grid-template-columns: 1fr; gap: 16px; }
   .cash-difference { padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--line); }
   .report-kpis article { min-height: 104px; }

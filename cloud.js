@@ -288,7 +288,7 @@
     if (entryError) throw entryError;
   }
 
-  function subscribe(locationId, callback, userId, membershipCallback, timeCallback) {
+  function subscribe(locationId, callback, userId, membershipCallback, timeCallback, allSalesCallback = null) {
     if (channel) client.removeChannel(channel);
     channel = client.channel(`location-${locationId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "location_state", filter: `location_id=eq.${locationId}` }, callback)
@@ -298,8 +298,13 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "locations" }, membershipCallback)
       .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, timeCallback)
       .on("postgres_changes", { event: "*", schema: "public", table: "time_entries" }, timeCallback)
-      .on("postgres_changes", { event: "*", schema: "public", table: "employee_bonuses" }, timeCallback)
-      .subscribe();
+      .on("postgres_changes", { event: "*", schema: "public", table: "employee_bonuses" }, timeCallback);
+    if (allSalesCallback) {
+      channel
+        .on("postgres_changes", { event: "*", schema: "public", table: "sales" }, allSalesCallback)
+        .on("postgres_changes", { event: "*", schema: "public", table: "cash_balances" }, allSalesCallback);
+    }
+    channel.subscribe();
   }
 
   global.CloudStore = {

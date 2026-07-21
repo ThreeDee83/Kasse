@@ -42,6 +42,7 @@ let cart = [];
 let selectedCategory = "all";
 let editor = { type: null, id: null, color: COLORS[0], copySourceId: null };
 let reportFilter = "today";
+let receiptLocationFilter = "all";
 let pendingPaymentTotal = 0;
 let paymentReturnCategory = null;
 let combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
@@ -279,7 +280,13 @@ async function switchLocation(locationId, background = false) {
       locationId,
       () => {
         clearTimeout(realtimeReloadTimer);
-        realtimeReloadTimer = setTimeout(() => switchLocation(locationId, true), 350);
+        realtimeReloadTimer = setTimeout(async () => {
+          await switchLocation(locationId, true);
+          if (!$("#reportsView").classList.contains("hidden")) {
+            await refreshReportScope(true, isAdminUser());
+            renderReport();
+          }
+        }, 350);
       },
       currentUserId,
       () => {
@@ -291,7 +298,16 @@ async function switchLocation(locationId, background = false) {
           clearTimeout(timeReloadTimer);
           timeReloadTimer = setTimeout(reloadTimeTracking, 250);
         }
+      },
+      isAdminUser() ? () => {
+        if ($("#reportsView").classList.contains("hidden")) return;
+        clearTimeout(realtimeReloadTimer);
+        realtimeReloadTimer = setTimeout(async () => {
+          await refreshReportScope(true, true);
+          renderReport();
+        }, 350);
       }
+      : null
     );
     if (!background) showToast(`Standort: ${location.name}`);
   } catch (error) {
@@ -498,8 +514,9 @@ async function openReports(options = {}) {
   $("#timeClockView").classList.add("hidden");
   $("#reportsView").classList.remove("hidden");
   reportFilter = "today";
+  receiptLocationFilter = "all";
   $("#reportDateInput").value = localDateKey(new Date());
-  await refreshReportScope(true);
+  await refreshReportScope(true, isAdminUser());
   renderReport();
   if (options.showReceiptHistory) {
     const history = $(".receipt-history-card");
@@ -542,8 +559,9 @@ function readStoredJson(key, fallback) {
   }
 }
 
-async function refreshReportScope(force = false) {
-  if (!useCombinedReports()) {
+async function refreshReportScope(force = false, includeAllLocations = false) {
+  const shouldLoadAllLocations = useCombinedReports() || includeAllLocations;
+  if (!shouldLoadAllLocations) {
     combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
     return;
   }
@@ -592,13 +610,40 @@ function selectedReportDateKey() {
   return reportFilter === "today" ? localDateKey(new Date()) : $("#reportDateInput").value;
 }
 
+function isReceiptItemCanceled(item) {
+  return item?.canceled === true || item?.status === "storniert";
+}
+
+function activeSaleItems(sale) {
+  return (sale?.items || []).filter((item) => !isReceiptItemCanceled(item));
+}
+
+function saleActiveTotal(sale) {
+  return activeSaleItems(sale).reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+}
+
+function receiptHistoryBaseSales() {
+  if (!isAdminUser()) return reportSourceSales();
+  return combinedReportScope.sales.length ? combinedReportScope.sales : reportSourceSales();
+}
+
+function filteredReceiptSales() {
+  let source = receiptHistoryBaseSales();
+  if (isAdminUser() && receiptLocationFilter !== "all") {
+    source = source.filter((sale) => String(sale.locationId || sale.location_id || currentLocationId) === String(receiptLocationFilter));
+  }
+  if (reportFilter === "all") return source;
+  const key = reportFilter === "today" ? localDateKey(new Date()) : $("#reportDateInput").value;
+  return source.filter((sale) => localDateKey(sale.timestamp) === key);
+}
+
 function aggregateSales(entries) {
   const products = new Map();
   let revenue = 0;
   let itemCount = 0;
   let freeCount = 0;
 
-  entries.forEach((sale) => sale.items.forEach((item) => {
+  entries.forEach((sale) => activeSaleItems(sale).forEach((item) => {
     const key = item.name.trim().toLocaleLowerCase("de");
     if (!products.has(key)) {
       products.set(key, { name: item.name, categories: new Set(), quantity: 0, revenue: 0, freeQuantity: 0 });
@@ -634,7 +679,7 @@ function renderReceiptHistory(reportSales) {
       <td><strong>${escapeHtml(formatDateTime(sale.timestamp))}</strong><small>${escapeHtml(sale.id || "")}</small></td>
       <td>${escapeHtml(sale.locationName || locations.find((location) => location.id === currentLocationId)?.name || "Standort")}</td>
       <td class="receipt-items">${items}</td>
-      <td class="number"><strong>${euro(Number(sale.total || 0))}</strong></td>
+      <td class="number"><strong>${euro(saleActiveTotal(sale))}</strong></td>
     </tr>`;
   }).join("");
   $$(".receipt-history-row").forEach((row) => {
@@ -714,12 +759,141 @@ function openReceiptDialog(saleId) {
     <div class="receipt-detail-meta">
       <span><strong>Standort</strong>${escapeHtml(saleLocationName(sale))}</span>
       <span><strong>Bon-ID</strong>${escapeHtml(sale.id || "")}</span>
-      <span><strong>Summe</strong>${euro(Number(sale.total || 0))}</span>
+      <span><strong>Summe</strong>${euro(saleActiveTotal(sale))}</span>
     </div>
     <div class="report-table-scroll">
       <table class="report-table receipt-detail-table">
         <thead><tr><th>Artikel</th><th class="number">Anzahl</th><th class="number">Preis</th><th class="number">Summe</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  $$(".receipt-minus-button").forEach((button) => button.addEventListener("click", () =>
+    removeReceiptPosition(button.dataset.saleId, Number(button.dataset.itemIndex))
+  ));
+  $("#receiptDialog").showModal();
+}
+
+function renderReceiptLocationFilter() {
+  const wrap = $("#receiptLocationFilterWrap");
+  const select = $("#receiptLocationFilter");
+  if (!wrap || !select) return;
+  wrap.classList.toggle("hidden", !isAdminUser());
+  if (!isAdminUser()) return;
+  const validIds = new Set(locations.map((location) => String(location.id)));
+  if (receiptLocationFilter !== "all" && !validIds.has(String(receiptLocationFilter))) receiptLocationFilter = "all";
+  select.innerHTML = `<option value="all">Alle Standorte</option>` + locations.map((location) =>
+    `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`
+  ).join("");
+  select.value = receiptLocationFilter;
+}
+
+function renderReceiptHistory(reportSales) {
+  renderReceiptLocationFilter();
+  const sortedSales = [...reportSales].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  $("#receiptHistoryCount").textContent = `${sortedSales.length} ${sortedSales.length === 1 ? "Bon" : "Bons"}`;
+  $("#receiptHistoryBody").innerHTML = sortedSales.map((sale) => {
+    const sourceItems = isAdminUser() ? (sale.items || []) : activeSaleItems(sale);
+    const items = sourceItems.map((item) =>
+      `<span class="${isReceiptItemCanceled(item) ? "receipt-item-canceled" : ""}">${escapeHtml(item.name)} <small>${Number(item.quantity || 0)} × ${euro(Number(item.price || 0))}${item.categoryName ? ` · ${escapeHtml(item.categoryName)}` : ""}</small>${isReceiptItemCanceled(item) ? `<span class="receipt-storno-badge">storniert</span>` : ""}</span>`
+    ).join("");
+    return `<tr class="receipt-history-row" data-sale-id="${escapeHtml(sale.id || "")}" tabindex="0" role="button" aria-label="Bon anzeigen">
+      <td><strong>${escapeHtml(formatDateTime(sale.timestamp))}</strong><small>${escapeHtml(sale.id || "")}</small></td>
+      <td>${escapeHtml(saleLocationName(sale))}</td>
+      <td class="receipt-items">${items || "<small>Keine aktiven Positionen</small>"}</td>
+      <td class="number"><strong>${euro(saleActiveTotal(sale))}</strong></td>
+    </tr>`;
+  }).join("");
+  $$(".receipt-history-row").forEach((row) => {
+    row.addEventListener("click", () => openReceiptDialog(row.dataset.saleId));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openReceiptDialog(row.dataset.saleId);
+      }
+    });
+  });
+  $("#emptyReceiptHistory").classList.toggle("hidden", sortedSales.length > 0);
+  $(".receipt-history-card .report-table-scroll").classList.toggle("hidden", sortedSales.length === 0);
+}
+
+function findSaleForReceipt(saleId) {
+  const target = String(saleId || "");
+  return [...receiptHistoryBaseSales(), ...reportSourceSales(), ...sales].find((sale) => String(sale.id || "") === target);
+}
+
+async function persistCorrectedSale(sale) {
+  const locationId = sale.locationId || sale.location_id || currentLocationId;
+  sale.locationId = locationId;
+  sale.total = saleActiveTotal(sale);
+  const localIndex = sales.findIndex((entry) => String(entry.id || "") === String(sale.id || ""));
+  if (localIndex >= 0) sales[localIndex] = sale;
+  else if (String(locationId) === String(currentLocationId)) sales.push(sale);
+  const combinedIndex = combinedReportScope.sales.findIndex((entry) => String(entry.id || "") === String(sale.id || ""));
+  if (combinedIndex >= 0) combinedReportScope.sales[combinedIndex] = { ...sale, locationName: saleLocationName(sale) };
+  persistSales();
+  if (!localMode) await CloudStore.saveSale(locationId, sale);
+  await refreshReportScope(true, isAdminUser());
+  renderReport();
+}
+
+async function removeReceiptPosition(saleId, itemIndex) {
+  const sale = findSaleForReceipt(saleId);
+  if (!sale || !sale.items?.[itemIndex]) {
+    showToast("Position wurde nicht gefunden");
+    return;
+  }
+  const item = sale.items[itemIndex];
+  if (isReceiptItemCanceled(item)) {
+    showToast("Position ist bereits storniert");
+    return;
+  }
+  if (!confirm(`Position „${item.name}“ aus diesem Bon stornieren?`)) return;
+  try {
+    sale.items[itemIndex] = {
+      ...item,
+      canceled: true,
+      status: "storniert",
+      canceledAt: new Date().toISOString(),
+      canceledBy: currentUserEmail || currentUserId || "Kasse"
+    };
+    await persistCorrectedSale(sale);
+    openReceiptDialog(sale.id);
+    showToast("Bonposition wurde storniert");
+  } catch (error) {
+    showToast(error.message || "Bonposition konnte nicht storniert werden");
+  }
+}
+
+function openReceiptDialog(saleId) {
+  const sale = findSaleForReceipt(saleId);
+  if (!sale) {
+    showToast("Bon wurde nicht gefunden");
+    return;
+  }
+  const rows = (sale.items || []).map((item, index) => {
+    if (!isAdminUser() && isReceiptItemCanceled(item)) return "";
+    const quantity = Number(item.quantity || 0);
+    const price = Number(item.price || 0);
+    const canceled = isReceiptItemCanceled(item);
+    return `<tr class="${canceled ? "is-canceled" : ""}">
+      <td><strong>${escapeHtml(item.name || "")}</strong>${canceled ? `<span class="receipt-storno-badge">storniert</span>` : ""}<small>${escapeHtml(item.categoryName || "Ohne Kategorie")}${canceled && item.canceledAt ? ` · ${escapeHtml(formatDateTime(item.canceledAt))}` : ""}</small></td>
+      <td class="number">${quantity}</td>
+      <td class="number">${euro(price)}</td>
+      <td class="number"><strong>${canceled ? euro(0) : euro(quantity * price)}</strong></td>
+      <td class="number">${canceled ? "" : `<button class="receipt-minus-button" data-sale-id="${escapeHtml(sale.id || "")}" data-item-index="${index}" title="Position stornieren">−</button>`}</td>
+    </tr>`;
+  }).join("");
+  $("#receiptDialogTitle").textContent = `Bon ${formatDateTime(sale.timestamp)}`;
+  $("#receiptDialogContent").innerHTML = `
+    <div class="receipt-detail-meta">
+      <span><strong>Standort</strong>${escapeHtml(saleLocationName(sale))}</span>
+      <span><strong>Bon-ID</strong>${escapeHtml(sale.id || "")}</span>
+      <span><strong>Summe</strong>${euro(saleActiveTotal(sale))}</span>
+    </div>
+    <div class="report-table-scroll">
+      <table class="report-table receipt-detail-table">
+        <thead><tr><th>Artikel</th><th class="number">Anzahl</th><th class="number">Preis</th><th class="number">Summe</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="5">Keine aktiven Positionen</td></tr>`}</tbody>
       </table>
     </div>`;
   $$(".receipt-minus-button").forEach((button) => button.addEventListener("click", () =>
@@ -735,11 +909,14 @@ function renderReport() {
   $("#reportDateWrap").classList.toggle("hidden", !isDate);
   $("#exportReportButton").disabled = false;
   $("#exportReportButton").title = isAll ? "Erstellt ein Tabellenblatt pro Tag und eine Gesamtabrechnung." : "";
+  renderReceiptLocationFilter();
 
-  const reportSales = filteredSales();
+  const reportSales = isAdminUser() ? filteredReceiptSales() : filteredSales();
   const summary = aggregateSales(reportSales);
   const periodKey = selectedReportDateKey();
+  const adminLocationScopeLabel = receiptLocationFilter === "all" ? "alle Standorte" : saleLocationName({ locationId: receiptLocationFilter });
   $("#reportPeriodLabel").textContent = `${isAll ? "Gesamter gespeicherter Zeitraum" : formatDateKey(periodKey)} · ${useCombinedReports() ? "alle Standorte gemeinsam" : "aktueller Standort"}`;
+  if (isAdminUser()) $("#reportPeriodLabel").textContent = `${isAll ? "Gesamter gespeicherter Zeitraum" : formatDateKey(periodKey)} · ${adminLocationScopeLabel}`;
   $("#reportRevenue").textContent = euro(summary.revenue);
   $("#reportSalesCount").textContent = reportSales.length;
   $("#reportAverage").textContent = `Ø ${euro(reportSales.length ? summary.revenue / reportSales.length : 0)} pro Bon`;
@@ -758,8 +935,8 @@ function renderReport() {
   $("#emptyReport").classList.toggle("hidden", summary.products.length > 0);
   $(".report-table-scroll").classList.toggle("hidden", summary.products.length === 0);
   renderReceiptHistory(reportSales);
-  $("#cashBalancePanel").classList.toggle("hidden", isAll || useCombinedReports());
-  if (!isAll && !useCombinedReports()) {
+  $("#cashBalancePanel").classList.toggle("hidden", isAll || useCombinedReports() || isAdminUser());
+  if (!isAll && !useCombinedReports() && !isAdminUser()) {
     const savedBalance = reportSourceCashBalances()[periodKey];
     $("#cashBalanceInput").value = Number.isFinite(savedBalance) ? savedBalance : "";
     renderCashDifference(summary.revenue);
@@ -866,7 +1043,7 @@ function buildExportPayload() {
     };
 
     data.products.forEach((product) => ensureRow(product.name));
-    reportSales.forEach((sale) => sale.items.forEach((item) => {
+    reportSales.forEach((sale) => activeSaleItems(sale).forEach((item) => {
       const row = ensureRow(item.name);
       row.total += item.quantity;
       row.amount += item.price * item.quantity;
@@ -2053,10 +2230,10 @@ function buildRevenueBackupWorkbook(backupSales, backupCashBalances, locationNam
     ["Umsatz", summary.revenue]
   ];
   const saleRows = [["Beleg-ID", "Datum/Uhrzeit", "Datum", "Standort", "Gesamtbetrag", "Artikelanzahl"]];
-  const itemRows = [["Beleg-ID", "Datum/Uhrzeit", "Artikel", "Kategorie", "Preis", "Anzahl", "Gesamtbetrag"]];
+  const itemRows = [["Beleg-ID", "Datum/Uhrzeit", "Artikel", "Kategorie", "Preis", "Anzahl", "Gesamtbetrag", "Status", "Storniert am"]];
   backupSales.forEach((sale) => {
     const timestamp = new Date(sale.timestamp);
-    const itemCount = (sale.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const itemCount = activeSaleItems(sale).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
     saleRows.push([
       sale.id || "",
       Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString("de-AT") : String(sale.timestamp || ""),
@@ -2066,6 +2243,7 @@ function buildRevenueBackupWorkbook(backupSales, backupCashBalances, locationNam
       itemCount
     ]);
     (sale.items || []).forEach((item) => {
+      const canceled = isReceiptItemCanceled(item);
       itemRows.push([
         sale.id || "",
         Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString("de-AT") : String(sale.timestamp || ""),
@@ -2073,7 +2251,9 @@ function buildRevenueBackupWorkbook(backupSales, backupCashBalances, locationNam
         item.categoryName || "Ohne Kategorie",
         Number(item.price || 0),
         Number(item.quantity || 0),
-        Number(item.price || 0) * Number(item.quantity || 0)
+        canceled ? 0 : Number(item.price || 0) * Number(item.quantity || 0),
+        canceled ? "storniert" : "aktiv",
+        item.canceledAt || ""
       ]);
     });
   });
@@ -2311,11 +2491,16 @@ $$(".open-settings").forEach((button) => button.addEventListener("click", () => 
 $$(".settings-tab").forEach((button) => button.addEventListener("click", () => setSettingsTab(button.dataset.tab)));
 $$(".report-filter").forEach((button) => button.addEventListener("click", async () => {
   reportFilter = button.dataset.filter;
-  await refreshReportScope();
+  await refreshReportScope(false, isAdminUser());
   renderReport();
 }));
 $("#reportDateInput").addEventListener("change", async () => {
-  await refreshReportScope();
+  await refreshReportScope(false, isAdminUser());
+  renderReport();
+});
+$("#receiptLocationFilter").addEventListener("change", async (event) => {
+  receiptLocationFilter = event.target.value;
+  await refreshReportScope(true, isAdminUser());
   renderReport();
 });
 $("#cashBalanceInput").addEventListener("input", saveCashBalance);
