@@ -300,15 +300,19 @@ async function switchLocation(locationId, background = false) {
           timeReloadTimer = setTimeout(reloadTimeTracking, 250);
         }
       },
-      isAdminUser() ? () => {
-        if ($("#reportsView").classList.contains("hidden")) return;
-        clearTimeout(realtimeReloadTimer);
-        realtimeReloadTimer = setTimeout(async () => {
-          await refreshReportScope(true, true);
-          renderReport();
-        }, 350);
-      }
-      : null
+      null,
+      isAdminUser()
+        ? () => {}
+        : () => {
+          clearTimeout(realtimeReloadTimer);
+          realtimeReloadTimer = setTimeout(async () => {
+            await switchLocation(locationId, true);
+            if (!$("#reportsView").classList.contains("hidden")) {
+              await refreshReportScope(true, false);
+              renderReport();
+            }
+          }, 350);
+        }
     );
     if (!background) showToast(`Standort: ${location.name}`);
   } catch (error) {
@@ -535,7 +539,7 @@ function startAdminReportAutoRefresh() {
       await refreshReportScope(true, true);
       renderReport();
     } catch (_) {}
-  }, 3000);
+  }, 120000);
 }
 
 async function openReports(options = {}) {

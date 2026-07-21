@@ -352,12 +352,13 @@
     if (entryError) throw entryError;
   }
 
-  function subscribe(locationId, callback, userId, membershipCallback, timeCallback, allSalesCallback = null) {
+  function subscribe(locationId, callback, userId, membershipCallback, timeCallback, allSalesCallback = null, locationSalesCallback = null) {
+    const saleCallback = locationSalesCallback || callback;
     if (channel) client.removeChannel(channel);
     channel = client.channel(`location-${locationId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "location_state", filter: `location_id=eq.${locationId}` }, callback)
-      .on("postgres_changes", { event: "*", schema: "public", table: "sales", filter: `location_id=eq.${locationId}` }, callback)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cash_balances", filter: `location_id=eq.${locationId}` }, callback)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sales", filter: `location_id=eq.${locationId}` }, saleCallback)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cash_balances", filter: `location_id=eq.${locationId}` }, saleCallback)
       .on("postgres_changes", { event: "*", schema: "public", table: "user_locations", filter: `user_id=eq.${userId}` }, membershipCallback)
       .on("postgres_changes", { event: "*", schema: "public", table: "locations" }, membershipCallback)
       .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, timeCallback)
