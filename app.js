@@ -2154,6 +2154,70 @@ async function applyEmployeeImport(importedEmployees) {
   return `${importedEmployees.length} Mitarbeiter wurden übernommen`;
 }
 
+function adminSyncLocationIds() {
+  const adminLocations = locations.filter((location) => String(location.role || "").toLowerCase() === "admin");
+  return (adminLocations.length ? adminLocations : locations).map((location) => location.id);
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
+async function syncMasterDataToUsers() {
+  if (!isAdminUser()) {
+    showToast("Nur Administratoren können Stammdaten synchronisieren.");
+    return;
+  }
+  if (!confirm("Aktuelle Kategorien, Artikel und Mitarbeiter jetzt an alle User/Staff und Standorte übertragen?")) return;
+
+  const button = $("#syncMasterDataButton");
+  const originalText = button?.textContent || "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Synchronisiere …";
+  }
+
+  try {
+    clearTimeout(cloudSaveTimer);
+    if (localMode) {
+      locations.forEach((location) => {
+        localStorage.setItem(scopedKeyFor("kassenraum-data", location.id), JSON.stringify(data));
+      });
+      persistLocalTimeTracking();
+      renderAll();
+      renderTimeTracking();
+      showToast(`Stammdaten wurden lokal an ${locations.length} Standorte synchronisiert`);
+      return;
+    }
+
+    const locationIds = adminSyncLocationIds();
+    if (!locationIds.length) throw new Error("Keine Standorte zum Synchronisieren gefunden.");
+    const catalogResult = await CloudStore.saveCatalogToLocations(locationIds, data);
+    for (const employee of employees) {
+      const existing = employees.find((item) => item.name.toLowerCase() === employee.name.toLowerCase() && isUuid(item.id));
+      await CloudStore.saveEmployee(currentLocationId, {
+        id: isUuid(employee.id) ? employee.id : existing?.id,
+        name: employee.name,
+        hourlyRate: Number(employee.hourlyRate || 0),
+        active: employee.active !== false
+      });
+    }
+    localStorage.setItem(scopedKey("kassenraum-data"), JSON.stringify(data));
+    await reloadTimeTracking();
+    renderAll();
+    showToast(catalogResult?.queued
+      ? "Stammdaten gespeichert – Sync wird bei Verbindung fortgesetzt"
+      : `Stammdaten wurden an ${locationIds.length} Standorte und alle Logins synchronisiert`);
+  } catch (error) {
+    showToast(error.message || "Stammdaten konnten nicht synchronisiert werden");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
 function exportAdminExcel() {
   if (!globalThis.XLSX) {
     showToast("Excel-Bibliothek ist offline noch nicht verfügbar.");
@@ -2572,6 +2636,7 @@ $("#excelImportInput").addEventListener("change", async (event) => {
   event.target.value = "";
 });
 $("#adminExcelExportButton").addEventListener("click", exportAdminExcel);
+$("#syncMasterDataButton").addEventListener("click", syncMasterDataToUsers);
 $("#deleteSalesButton").addEventListener("click", deleteRevenueData);
 $("#resetTimeTrackingButton").addEventListener("click", resetTimeTrackingData);
 $("#logoutButton").addEventListener("click", logout);
