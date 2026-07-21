@@ -50,6 +50,7 @@ let toastTimer;
 let cloudSaveTimer;
 let realtimeReloadTimer;
 let timeReloadTimer;
+let adminReportRefreshTimer;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -333,6 +334,13 @@ async function startCloudSession() {
     ? currentLocationId
     : locations[0].id;
   currentRole = locations.find((location) => location.id === preferred)?.role || "staff";
+  if (isAdminUser()) {
+    try {
+      await CloudStore.syncLocationMemberships();
+      locations = normalizeLocationList(await CloudStore.locations());
+      currentRole = locations.find((location) => location.id === preferred)?.role || currentRole;
+    } catch (_) {}
+  }
   $("#currentUserLabel").textContent = session.user.email || "Supabase-Konto";
   showApplication();
   await switchLocation(preferred);
@@ -491,6 +499,7 @@ function openSettings(tab = "categories") {
     showToast("Nur Administratoren können die Einstellungen öffnen.");
     return;
   }
+  stopAdminReportAutoRefresh();
   $("#posView").classList.add("hidden");
   $("#reportsView").classList.add("hidden");
   $("#timeClockView").classList.add("hidden");
@@ -505,7 +514,28 @@ function closeSettings() {
   $("#reportsView").classList.add("hidden");
   $("#timeClockView").classList.add("hidden");
   $("#posView").classList.remove("hidden");
+  stopAdminReportAutoRefresh();
   renderAll();
+}
+
+function stopAdminReportAutoRefresh() {
+  clearInterval(adminReportRefreshTimer);
+  adminReportRefreshTimer = null;
+}
+
+function startAdminReportAutoRefresh() {
+  stopAdminReportAutoRefresh();
+  if (!isAdminUser() || localMode) return;
+  adminReportRefreshTimer = setInterval(async () => {
+    if ($("#reportsView").classList.contains("hidden")) {
+      stopAdminReportAutoRefresh();
+      return;
+    }
+    try {
+      await refreshReportScope(true, true);
+      renderReport();
+    } catch (_) {}
+  }, 3000);
 }
 
 async function openReports(options = {}) {
@@ -518,6 +548,7 @@ async function openReports(options = {}) {
   $("#reportDateInput").value = localDateKey(new Date());
   await refreshReportScope(true, isAdminUser());
   renderReport();
+  startAdminReportAutoRefresh();
   if (options.showReceiptHistory) {
     const history = $(".receipt-history-card");
     history.open = true;
@@ -1233,6 +1264,7 @@ function renderActiveEmployees() {
 }
 
 async function openTimeClock() {
+  stopAdminReportAutoRefresh();
   $("#posView").classList.add("hidden");
   $("#settingsView").classList.add("hidden");
   $("#reportsView").classList.add("hidden");
@@ -2227,7 +2259,14 @@ function exportAdminExcel() {
   const workbook = XLSX.utils.book_new();
   if (sections.catalog) {
     const categories = data.categories;
-    const productNames = [...new Set(data.products.map((product) => product.name))].sort((a, b) => a.localeCompare(b, "de"));
+    const productNames = [];
+    const seenProductNames = new Set();
+    data.products.forEach((product) => {
+      const key = String(product.name || "").trim().toLocaleLowerCase("de");
+      if (!key || seenProductNames.has(key)) return;
+      seenProductNames.add(key);
+      productNames.push(product.name);
+    });
     const matrix = [["Artikel", ...categories.map((category) => category.name)]];
     productNames.forEach((name) => {
       const row = [name];
@@ -2482,6 +2521,7 @@ function showToast(message) {
 }
 
 async function logout() {
+  stopAdminReportAutoRefresh();
   try {
     if (!localMode) await CloudStore.signOut();
   } catch (_) {}
