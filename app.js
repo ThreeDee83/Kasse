@@ -2193,15 +2193,7 @@ async function syncMasterDataToUsers() {
     const locationIds = adminSyncLocationIds();
     if (!locationIds.length) throw new Error("Keine Standorte zum Synchronisieren gefunden.");
     const catalogResult = await CloudStore.saveCatalogToLocations(locationIds, data);
-    for (const employee of employees) {
-      const existing = employees.find((item) => item.name.toLowerCase() === employee.name.toLowerCase() && isUuid(item.id));
-      await CloudStore.saveEmployee(currentLocationId, {
-        id: isUuid(employee.id) ? employee.id : existing?.id,
-        name: employee.name,
-        hourlyRate: Number(employee.hourlyRate || 0),
-        active: employee.active !== false
-      });
-    }
+    await CloudStore.syncEmployees(employees, currentLocationId);
     localStorage.setItem(scopedKey("kassenraum-data"), JSON.stringify(data));
     await reloadTimeTracking();
     renderAll();

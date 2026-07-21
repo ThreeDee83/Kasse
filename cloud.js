@@ -35,10 +35,15 @@
       }, { onConflict: "location_id,date_key" });
     }
     if (action.type === "catalog") {
+      const rows = [...new Set(action.locationIds || [])].map((locationId) => ({
+        location_id: locationId,
+        data: action.data,
+        updated_at: new Date().toISOString()
+      }));
+      if (!rows.length) return { data: [], error: null };
       return client
         .from("location_state")
-        .update({ data: action.data, updated_at: new Date().toISOString() })
-        .in("location_id", action.locationIds);
+        .upsert(rows, { onConflict: "location_id" });
     }
   }
 
@@ -113,6 +118,45 @@
 
   function saveCatalogToLocations(locationIds, data) {
     return queued({ type: "catalog", locationIds, data });
+  }
+
+  function normalizedName(name) {
+    return String(name || "").trim().toLocaleLowerCase("de");
+  }
+
+  async function syncEmployees(employees, locationId = null) {
+    if (!client) throw new Error("Supabase ist nicht konfiguriert.");
+    const incoming = (employees || [])
+      .map((employee) => ({
+        id: employee.id,
+        name: String(employee.name || "").trim(),
+        hourlyRate: Number(employee.hourlyRate ?? employee.hourly_rate ?? 0),
+        active: employee.active !== false
+      }))
+      .filter((employee) => employee.name && Number.isFinite(employee.hourlyRate));
+    if (!incoming.length) return { synced: 0 };
+
+    const { data: existingEmployees, error: loadError } = await client.from("employees").select("*");
+    if (loadError) throw loadError;
+    const existingByName = new Map((existingEmployees || []).map((employee) => [normalizedName(employee.name), employee]));
+
+    for (const employee of incoming) {
+      const existing = existingByName.get(normalizedName(employee.name));
+      const values = {
+        name: employee.name,
+        hourly_rate: employee.hourlyRate,
+        active: employee.active
+      };
+      if (existing?.id) {
+        const { error } = await client.from("employees").update(values).eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        const { data, error } = await client.from("employees").insert({ ...values, location_id: locationId }).select("*").single();
+        if (error) throw error;
+        if (data?.name) existingByName.set(normalizedName(data.name), data);
+      }
+    }
+    return { synced: incoming.length };
   }
 
   async function loadLocation(locationId) {
@@ -310,7 +354,7 @@
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, updateLocation, loadLocation, loadReportsForLocations,
     saveState, saveCatalogToLocations, insertSale, saveSale, deleteSale, saveCash, deleteCash, deleteSales,
-    loadTimeTracking, clockIn, clockOut, saveEmployee, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
+    loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue
   };
   global.addEventListener("online", flushQueue);
