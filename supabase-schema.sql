@@ -243,6 +243,36 @@ begin
   return affected_rows;
 end $$;
 
+create or replace function public.sync_catalog_to_all_locations(catalog_data jsonb)
+returns integer language plpgsql security definer set search_path = public
+as $$
+declare affected_rows integer := 0;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not exists (
+    select 1 from user_locations where user_id = auth.uid() and role = 'admin'
+  ) then
+    raise exception 'Admin role required';
+  end if;
+  if catalog_data is null
+    or jsonb_typeof(catalog_data->'categories') <> 'array'
+    or jsonb_typeof(catalog_data->'products') <> 'array'
+  then
+    raise exception 'Invalid catalog data';
+  end if;
+
+  insert into location_state (location_id, data, updated_at)
+  select id, catalog_data, now()
+  from locations
+  on conflict (location_id) do update
+    set data = excluded.data,
+        updated_at = excluded.updated_at;
+
+  get diagnostics affected_rows = row_count;
+  perform public.sync_location_memberships();
+  return affected_rows;
+end $$;
+
 create or replace function public.create_location(location_name text)
 returns uuid language plpgsql security definer set search_path = public
 as $$

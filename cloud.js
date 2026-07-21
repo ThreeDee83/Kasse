@@ -111,6 +111,12 @@
     if (error) throw error;
   }
 
+  async function syncLocationMemberships() {
+    const { data, error } = await client.rpc("sync_location_memberships");
+    if (error) throw error;
+    return data;
+  }
+
   async function updateLocation(locationId, name) {
     const { error } = await client.from("locations").update({ name }).eq("id", locationId);
     if (error) throw error;
@@ -118,6 +124,20 @@
 
   function saveCatalogToLocations(locationIds, data) {
     return queued({ type: "catalog", locationIds, data });
+  }
+
+  async function overwriteCatalogToLocations(locationIds, data) {
+    const result = await run({ type: "catalog", locationIds, data });
+    if (result?.error) throw result.error;
+    return result;
+  }
+
+  async function syncCatalogToAllLocations(data, fallbackLocationIds = []) {
+    const rpcResult = await client.rpc("sync_catalog_to_all_locations", { catalog_data: data });
+    if (!rpcResult.error) return { data: rpcResult.data, allLocations: true };
+    if (!["42883", "PGRST202"].includes(rpcResult.error.code)) throw rpcResult.error;
+    const fallback = await overwriteCatalogToLocations(fallbackLocationIds, data);
+    return { ...fallback, allLocations: false, fallback: true };
   }
 
   function normalizedName(name) {
@@ -353,7 +373,7 @@
 
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, updateLocation, loadLocation, loadReportsForLocations,
-    saveState, saveCatalogToLocations, insertSale, saveSale, deleteSale, saveCash, deleteCash, deleteSales,
+    saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncLocationMemberships, insertSale, saveSale, deleteSale, saveCash, deleteCash, deleteSales,
     loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue
   };

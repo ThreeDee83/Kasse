@@ -2190,16 +2190,20 @@ async function syncMasterDataToUsers() {
       return;
     }
 
+    try {
+      await CloudStore.syncLocationMemberships();
+      locations = normalizeLocationList(await CloudStore.locations());
+    } catch (_) {}
     const locationIds = adminSyncLocationIds();
     if (!locationIds.length) throw new Error("Keine Standorte zum Synchronisieren gefunden.");
-    const catalogResult = await CloudStore.saveCatalogToLocations(locationIds, data);
+    const catalogResult = await CloudStore.syncCatalogToAllLocations(data, locationIds);
     await CloudStore.syncEmployees(employees, currentLocationId);
     localStorage.setItem(scopedKey("kassenraum-data"), JSON.stringify(data));
     await reloadTimeTracking();
     renderAll();
     showToast(catalogResult?.queued
       ? "Stammdaten gespeichert – Sync wird bei Verbindung fortgesetzt"
-      : `Stammdaten wurden an ${locationIds.length} Standorte und alle Logins synchronisiert`);
+      : `Kategorien, Artikel und MA wurden ${catalogResult?.allLocations ? "an allen Standorten" : `an ${locationIds.length} Standorten`} überschrieben`);
   } catch (error) {
     showToast(error.message || "Stammdaten konnten nicht synchronisiert werden");
   } finally {
