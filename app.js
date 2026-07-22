@@ -542,6 +542,33 @@ function startAdminReportAutoRefresh() {
   }, 120000);
 }
 
+async function syncReceiptsForAdmin() {
+  if (!isAdminUser()) {
+    showToast("Nur Administratoren kÃ¶nnen Bons synchronisieren.");
+    return;
+  }
+  const button = $("#syncReceiptsButton");
+  const originalText = button?.textContent || "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Synchronisiere â€¦";
+  }
+  try {
+    await refreshReportScope(true, true);
+    renderReport();
+    startAdminReportAutoRefresh();
+    const count = filteredReceiptSales().length;
+    showToast(`${count} ${count === 1 ? "Bon" : "Bons"} synchronisiert`);
+  } catch (error) {
+    showToast(error.message || "Bons konnten nicht synchronisiert werden");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
 async function openReports(options = {}) {
   $("#posView").classList.add("hidden");
   $("#settingsView").classList.add("hidden");
@@ -2610,6 +2637,7 @@ $("#receiptLocationFilter").addEventListener("change", async (event) => {
 $("#cashBalanceInput").addEventListener("input", saveCashBalance);
 $("#exportReportButton").addEventListener("click", exportReport);
 $("#emailReportButton").addEventListener("click", emailReport);
+$("#syncReceiptsButton").addEventListener("click", syncReceiptsForAdmin);
 $("#productSearch").addEventListener("input", renderProducts);
 $("#addCategoryButton").addEventListener("click", () => openEditor("category"));
 $("#addProductButton").addEventListener("click", () => openEditor("product"));
