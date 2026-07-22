@@ -236,6 +236,13 @@
     if (error) throw error;
   }
 
+  async function deleteSalesByIds(saleIds) {
+    const ids = [...new Set((saleIds || []).filter(Boolean).map(String))];
+    if (!ids.length) return;
+    const { error } = await client.from("sales").delete().in("id", ids);
+    if (error) throw error;
+  }
+
   function saveCash(locationId, dateKey, balance) {
     return queued({ type: "cash", locationId, dateKey, balance });
   }
@@ -383,7 +390,7 @@
 
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, loadLocation, loadReportsForLocations,
-    saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncLocationMemberships, insertSale, saveSale, deleteSale, saveCash, deleteCash, deleteSales,
+    saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, deleteCash, deleteSales,
     loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue
   };

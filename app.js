@@ -877,6 +877,60 @@ async function removeReceiptPosition(saleId, itemIndex) {
   }
 }
 
+async function deleteReceipt(saleId) {
+  if (!isAdminUser()) return;
+  const sale = findSaleForReceipt(saleId);
+  if (!sale) {
+    showToast("Bon wurde nicht gefunden");
+    return;
+  }
+  if (!confirm(`Bon ${sale.id || ""} wirklich endgültig löschen?`)) return;
+  if (!confirm("Sicher? Dieser Bon wird dauerhaft aus der Abrechnung entfernt.")) return;
+  try {
+    if (localMode) {
+      sales = sales.filter((entry) => String(entry.id || "") !== String(sale.id || ""));
+    } else {
+      await CloudStore.deleteSale(sale.id);
+    }
+    combinedReportScope.sales = combinedReportScope.sales.filter((entry) => String(entry.id || "") !== String(sale.id || ""));
+    persistSales();
+    await refreshReportScope(true, isAdminUser());
+    renderReport();
+    $("#receiptDialog").close();
+    showToast("Bon wurde gelöscht");
+  } catch (error) {
+    showToast(error.message || "Bon konnte nicht gelöscht werden");
+  }
+}
+
+async function deleteFilteredReceipts() {
+  if (!isAdminUser()) return;
+  const reportSales = filteredReceiptSales();
+  const saleIds = [...new Set(reportSales.map((sale) => sale.id).filter(Boolean))];
+  if (!saleIds.length) {
+    showToast("Keine Bons zum Löschen gefunden");
+    return;
+  }
+  const scopeLabel = reportFilter === "all" ? "alle angezeigten Bons" : `alle Bons vom ${formatDateKey(selectedReportDateKey())}`;
+  if (!confirm(`${saleIds.length} ${saleIds.length === 1 ? "Bon" : "Bons"} löschen (${scopeLabel})?`)) return;
+  if (!confirm("Sicher? Diese Bons werden dauerhaft aus der Abrechnung entfernt.")) return;
+  try {
+    if (localMode) {
+      const idSet = new Set(saleIds.map(String));
+      sales = sales.filter((sale) => !idSet.has(String(sale.id || "")));
+      combinedReportScope.sales = combinedReportScope.sales.filter((sale) => !idSet.has(String(sale.id || "")));
+    } else {
+      await CloudStore.deleteSalesByIds(saleIds);
+    }
+    persistSales();
+    await refreshReportScope(true, isAdminUser());
+    renderReport();
+    showToast(`${saleIds.length} ${saleIds.length === 1 ? "Bon" : "Bons"} gelöscht`);
+  } catch (error) {
+    showToast(error.message || "Bons konnten nicht gelöscht werden");
+  }
+}
+
 function openReceiptDialog(saleId) {
   const sale = findSaleForReceipt(saleId);
   if (!sale) {
@@ -901,6 +955,7 @@ function openReceiptDialog(saleId) {
       <span><strong>Bon-ID</strong>${escapeHtml(sale.id || "")}</span>
       <span><strong>Summe</strong>${euro(saleActiveTotal(sale))}</span>
     </div>
+    ${isAdminUser() ? `<div class="receipt-admin-actions"><button class="danger-button" id="deleteReceiptButton" type="button" data-sale-id="${escapeHtml(sale.id || "")}">Bon löschen</button></div>` : ""}
     <div class="report-table-scroll">
       <table class="report-table receipt-detail-table">
         <thead><tr><th>Artikel</th><th class="number">Anzahl</th><th class="number">Preis</th><th class="number">Summe</th><th></th></tr></thead>
@@ -910,6 +965,7 @@ function openReceiptDialog(saleId) {
   $$(".receipt-minus-button").forEach((button) => button.addEventListener("click", () =>
     removeReceiptPosition(button.dataset.saleId, Number(button.dataset.itemIndex))
   ));
+  $("#deleteReceiptButton")?.addEventListener("click", (event) => deleteReceipt(event.currentTarget.dataset.saleId));
   $("#receiptDialog").showModal();
 }
 
@@ -2716,6 +2772,7 @@ $("#cashBalanceInput").addEventListener("input", saveCashBalance);
 $("#exportReportButton").addEventListener("click", exportReport);
 $("#emailReportButton").addEventListener("click", emailReport);
 $("#syncReceiptsButton").addEventListener("click", syncReceiptsForAdmin);
+$("#deleteFilteredReceiptsButton").addEventListener("click", deleteFilteredReceipts);
 $("#productSearch").addEventListener("input", renderProducts);
 $("#addCategoryButton").addEventListener("click", () => openEditor("category"));
 $("#addProductButton").addEventListener("click", () => openEditor("product"));

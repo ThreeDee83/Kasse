@@ -287,6 +287,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .receipt-detail-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
 .receipt-detail-meta span { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .receipt-detail-meta strong { display: block; margin-bottom: 4px; color: var(--ink); font-size: 11px; text-transform: uppercase; }
+.receipt-admin-actions { display: flex; justify-content: flex-end; margin: -4px 0 14px; }
 .receipt-minus-button { width: 30px; height: 30px; border: 1px solid var(--danger); border-radius: 8px; background: transparent; color: var(--danger); cursor: pointer; font-size: 20px; line-height: 1; font-weight: 800; }
 .receipt-minus-button:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); }
 
