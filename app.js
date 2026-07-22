@@ -166,6 +166,36 @@ function normalizeLocationList(list) {
     .filter(Boolean);
 }
 
+function canonicalLocationName(name) {
+  const rawName = String(name || "").trim();
+  const normalized = rawName
+    .toLocaleLowerCase("de")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!normalized || normalized === "undefined" || normalized === "null") return null;
+  if (normalized.includes("punsch")) return "Punschhütte";
+  if (normalized === "bar" || normalized.includes("bar ")) return "Bar";
+  return rawName;
+}
+
+function normalizeLocationList(list) {
+  const prepared = [];
+  const seen = new Set();
+  (list || []).forEach((location) => {
+    if (!location?.id || seen.has(String(location.id))) return;
+    const rawName = String(location.name ?? "").trim();
+    const invalidName = !rawName || rawName.toLowerCase() === "undefined" || rawName.toLowerCase() === "null";
+    if (invalidName) return;
+    prepared.push({
+      ...location,
+      name: rawName,
+      role: location.role || "staff"
+    });
+    seen.add(String(location.id));
+  });
+  return prepared;
+}
+
 function renderAll() {
   applyTheme();
   renderRoleAccess();
@@ -2751,6 +2781,34 @@ $("#createLocationButton").addEventListener("click", async (event) => {
     showToast(error.message || "Standort konnte nicht angelegt werden");
   }
 });
+
+$("#createLocationButton").addEventListener("click", async (event) => {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const name = $("#newLocationInput").value.trim();
+  if (!name) return;
+  const existing = locations.find((location) => location.name.toLocaleLowerCase("de") === name.toLocaleLowerCase("de"));
+  if (existing) {
+    showToast(`${name} ist bereits vorhanden`);
+    return;
+  }
+  try {
+    if (localMode) {
+      const location = { id: uid("location"), name, role: "admin" };
+      locations.push(location);
+      localStorage.setItem("kassenraum-local-locations", JSON.stringify(locations));
+      $("#newLocationInput").value = "";
+      await switchLocation(location.id);
+    } else {
+      const id = await CloudStore.createLocation(name);
+      locations = normalizeLocationList(await CloudStore.locations());
+      $("#newLocationInput").value = "";
+      await switchLocation(id);
+    }
+  } catch (error) {
+    showToast(error.message || "Standort konnte nicht angelegt werden");
+  }
+}, true);
 $("#excelImportInput").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
