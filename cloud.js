@@ -100,6 +100,15 @@
       .map((entry) => ({ ...entry.location, role: entry.role }));
   }
 
+  async function adminLocations() {
+    const { data, error } = await client
+      .from("locations")
+      .select("id,name,created_at")
+      .order("created_at");
+    if (error) throw error;
+    return (data || []).map((location) => ({ id: location.id, name: location.name, role: "admin" }));
+  }
+
   async function createLocation(name) {
     const { data, error } = await client.rpc("create_location", { location_name: name });
     if (error) throw error;
@@ -373,7 +382,7 @@
   }
 
   global.CloudStore = {
-    configured, client, signIn, signOut, session, locations, createLocation, deleteLocation, updateLocation, loadLocation, loadReportsForLocations,
+    configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, loadLocation, loadReportsForLocations,
     saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncLocationMemberships, insertSale, saveSale, deleteSale, saveCash, deleteCash, deleteSales,
     loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue

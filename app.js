@@ -536,10 +536,23 @@ function startAdminReportAutoRefresh() {
       return;
     }
     try {
+      await refreshAdminReceiptLocations();
       await refreshReportScope(true, true);
       renderReport();
     } catch (_) {}
   }, 120000);
+}
+
+async function refreshAdminReceiptLocations() {
+  if (!isAdminUser() || localMode || !CloudStore.adminLocations) return;
+  const remoteLocations = normalizeLocationList(await CloudStore.adminLocations());
+  if (!remoteLocations.length) return;
+  const currentIds = locations.map((location) => String(location.id)).join("|");
+  const remoteIds = remoteLocations.map((location) => String(location.id)).join("|");
+  if (currentIds !== remoteIds) {
+    locations = remoteLocations;
+    renderLocationSelector();
+  }
 }
 
 async function syncReceiptsForAdmin() {
@@ -554,6 +567,7 @@ async function syncReceiptsForAdmin() {
     button.textContent = "Synchronisiere â€¦";
   }
   try {
+    await refreshAdminReceiptLocations();
     await refreshReportScope(true, true);
     renderReport();
     startAdminReportAutoRefresh();
@@ -577,6 +591,7 @@ async function openReports(options = {}) {
   reportFilter = "today";
   receiptLocationFilter = "all";
   $("#reportDateInput").value = localDateKey(new Date());
+  await refreshAdminReceiptLocations();
   await refreshReportScope(true, isAdminUser());
   renderReport();
   startAdminReportAutoRefresh();

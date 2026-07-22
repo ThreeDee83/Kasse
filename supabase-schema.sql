@@ -421,7 +421,7 @@ drop policy if exists "admins insert bonuses" on public.employee_bonuses;
 drop policy if exists "admins update bonuses" on public.employee_bonuses;
 drop policy if exists "admins delete bonuses" on public.employee_bonuses;
 
-create policy "members read locations" on public.locations for select using (is_location_member(id));
+create policy "members read locations" on public.locations for select using (is_location_member(id) or is_any_admin());
 create policy "admins update locations" on public.locations for update using (is_any_admin()) with check (is_any_admin());
 create policy "users read memberships" on public.user_locations for select using (user_id = auth.uid() or is_location_admin(location_id));
 create policy "members read state" on public.location_state for select using (is_location_member(location_id));
