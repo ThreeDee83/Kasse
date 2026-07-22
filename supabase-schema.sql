@@ -95,6 +95,58 @@ alter table public.employee_bonuses alter column location_id drop not null;
 alter table public.employee_bonuses drop constraint if exists employee_bonuses_location_id_fkey;
 alter table public.employee_bonuses add constraint employee_bonuses_location_id_fkey foreign key (location_id) references public.locations(id) on delete set null;
 
+do $$
+declare
+  punsch_location uuid;
+  bar_location uuid;
+begin
+  insert into public.locations(name)
+  select 'Punschhütte'
+  where not exists (select 1 from public.locations where lower(trim(name)) in ('punschhütte', 'punschhuette'));
+
+  insert into public.locations(name)
+  select 'Bar'
+  where not exists (select 1 from public.locations where lower(trim(name)) = 'bar');
+
+  select id into punsch_location
+  from public.locations
+  where lower(trim(name)) in ('punschhütte', 'punschhuette')
+  order by created_at
+  limit 1;
+
+  select id into bar_location
+  from public.locations
+  where lower(trim(name)) = 'bar'
+  order by created_at
+  limit 1;
+
+  insert into public.location_state(location_id)
+  select id from public.locations
+  where id in (punsch_location, bar_location)
+  on conflict (location_id) do nothing;
+
+  insert into public.user_locations(user_id, location_id, role)
+  select id, punsch_location, 'staff'
+  from auth.users
+  where lower(email) = 'ph@standl.at' and punsch_location is not null
+  on conflict (user_id, location_id) do update
+    set role = case when public.user_locations.role = 'admin' then 'admin' else excluded.role end;
+
+  insert into public.user_locations(user_id, location_id, role)
+  select id, bar_location, 'staff'
+  from auth.users
+  where lower(email) = 'bar@standl.at' and bar_location is not null
+  on conflict (user_id, location_id) do update
+    set role = case when public.user_locations.role = 'admin' then 'admin' else excluded.role end;
+
+  delete from public.locations location
+  where lower(trim(location.name)) = 'hauptstandort'
+    and not exists (select 1 from public.sales sale where sale.location_id = location.id)
+    and not exists (select 1 from public.cash_balances cash where cash.location_id = location.id)
+    and not exists (select 1 from public.time_entries entry where entry.location_id = location.id)
+    and not exists (select 1 from public.employee_bonuses bonus where bonus.location_id = location.id);
+end $$;
+
 alter table public.employees drop constraint if exists employees_location_id_name_key;
 
 do $$

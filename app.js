@@ -1,4 +1,5 @@
 const COLORS = ["#C85C4A", "#D58C32", "#D2AE3F", "#5A8B62", "#3F8177", "#4B78A8", "#7466A6", "#A45C82"];
+const STANDARD_LOCATION_NAMES = ["Punschhütte", "Bar"];
 const DEFAULT_DATA = {
   categories: [
     { id: "cat-coffee", name: "Kaffee", color: "#C85C4A" },
@@ -46,6 +47,7 @@ let receiptLocationFilter = "all";
 let pendingPaymentTotal = 0;
 let paymentReturnCategory = null;
 let combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
+let reportLocationScope = [];
 let toastTimer;
 let cloudSaveTimer;
 let realtimeReloadTimer;
@@ -130,28 +132,38 @@ function isAdminUser() {
     || locations.some((location) => String(location.role || "").toLowerCase() === "admin");
 }
 
+function canonicalLocationName(name) {
+  const normalized = String(name || "")
+    .trim()
+    .toLocaleLowerCase("de")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!normalized || normalized === "undefined" || normalized === "null" || normalized === "hauptstandort") return null;
+  if (normalized.includes("punsch")) return "Punschhütte";
+  if (normalized === "bar" || normalized.includes("bar ")) return "Bar";
+  return null;
+}
+
 function normalizeLocationList(list) {
   const prepared = [];
   const seen = new Set();
   (list || []).forEach((location) => {
-    if (!location?.id || seen.has(location.id)) return;
+    if (!location?.id) return;
     const rawName = String(location.name ?? "").trim();
-    const invalidName = !rawName || rawName.toLowerCase() === "undefined" || rawName.toLowerCase() === "null";
+    const canonicalName = canonicalLocationName(rawName);
+    if (!canonicalName) return;
+    const dedupeKey = canonicalName.toLocaleLowerCase("de");
+    if (seen.has(dedupeKey)) return;
     prepared.push({
       ...location,
-      name: rawName,
-      invalidName,
+      name: canonicalName,
       role: location.role || "staff"
     });
-    seen.add(location.id);
+    seen.add(dedupeKey);
   });
-  const visibleLocations = prepared.some((location) => !location.invalidName)
-    ? prepared.filter((location) => !location.invalidName)
-    : prepared.slice(0, 1);
-  return visibleLocations.map(({ invalidName, ...location }) => ({
-    ...location,
-    name: location.name || "Standort"
-  }));
+  return STANDARD_LOCATION_NAMES
+    .map((name) => prepared.find((location) => location.name === name))
+    .filter(Boolean);
 }
 
 function renderAll() {
@@ -184,6 +196,10 @@ function applyTheme() {
 function renderLocationSelector() {
   const selector = $("#locationSelector");
   locations = normalizeLocationList(locations);
+  if (!locations.some((location) => location.id === currentLocationId) && locations.length) {
+    currentLocationId = locations[0].id;
+    localStorage.setItem("kassenraum-current-location", currentLocationId);
+  }
   selector.innerHTML = locations.map((location) =>
     `<option value="${location.id}">${escapeHtml(location.name)}</option>`
   ).join("");
@@ -331,7 +347,8 @@ async function startCloudSession() {
   currentUserEmail = session.user.email || "";
   locations = normalizeLocationList(await CloudStore.locations());
   if (!locations.length) {
-    await CloudStore.createLocation("Hauptstandort");
+    await CloudStore.createLocation("Punschhütte");
+    await CloudStore.createLocation("Bar");
     locations = normalizeLocationList(await CloudStore.locations());
   }
   const preferred = locations.some((location) => location.id === currentLocationId)
@@ -364,7 +381,10 @@ function startLocalMode() {
     locations = [];
   }
   locations = normalizeLocationList(locations);
-  if (!locations.length) locations = [{ id: "local", name: "Lokaler Standort", role: "admin" }];
+  if (!locations.length) locations = [
+    { id: "local-punsch", name: "Punschhütte", role: "admin" },
+    { id: "local-bar", name: "Bar", role: "admin" }
+  ];
   localStorage.setItem("kassenraum-local-locations", JSON.stringify(locations));
   currentLocationId = locations.some((location) => location.id === currentLocationId) ? currentLocationId : locations[0].id;
   loadLocalLocation(currentLocationId);
@@ -545,12 +565,24 @@ function startAdminReportAutoRefresh() {
 
 async function refreshAdminReceiptLocations() {
   if (!isAdminUser() || localMode || !CloudStore.adminLocations) return;
-  const remoteLocations = normalizeLocationList(await CloudStore.adminLocations());
+  const remoteLocations = (await CloudStore.adminLocations())
+    .map((location) => {
+      const name = canonicalLocationName(location.name);
+      return name ? { ...location, name, role: "admin" } : null;
+    })
+    .filter(Boolean);
   if (!remoteLocations.length) return;
+  reportLocationScope = remoteLocations;
+  const visibleLocations = normalizeLocationList(remoteLocations);
+  if (!visibleLocations.length) return;
   const currentIds = locations.map((location) => String(location.id)).join("|");
-  const remoteIds = remoteLocations.map((location) => String(location.id)).join("|");
+  const remoteIds = visibleLocations.map((location) => String(location.id)).join("|");
   if (currentIds !== remoteIds) {
-    locations = remoteLocations;
+    locations = visibleLocations;
+    if (!locations.some((location) => location.id === currentLocationId)) {
+      currentLocationId = locations[0].id;
+      localStorage.setItem("kassenraum-current-location", currentLocationId);
+    }
     renderLocationSelector();
   }
 }
@@ -642,13 +674,14 @@ async function refreshReportScope(force = false, includeAllLocations = false) {
     combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
     return;
   }
-  const scopeKey = `${locations.map((location) => location.id).join("|")}:${sales.length}:${Object.keys(cashBalances).length}`;
+  const scopeLocations = includeAllLocations && reportLocationScope.length ? reportLocationScope : locations;
+  const scopeKey = `${scopeLocations.map((location) => location.id).join("|")}:${sales.length}:${Object.keys(cashBalances).length}`;
   if (!force && combinedReportScope.key === scopeKey) return;
   try {
     if (localMode) {
       const allSales = [];
       const combinedCash = {};
-      locations.forEach((location) => {
+      scopeLocations.forEach((location) => {
         const locationSales = readStoredJson(scopedKeyFor("kassenraum-sales", location.id), []);
         locationSales.forEach((sale) => allSales.push({ ...sale, locationId: location.id, locationName: location.name }));
         const locationCash = readStoredJson(scopedKeyFor("kassenraum-cash-balances", location.id), {});
@@ -658,8 +691,8 @@ async function refreshReportScope(force = false, includeAllLocations = false) {
       });
       combinedReportScope = { key: scopeKey, sales: allSales, cashBalances: combinedCash, locationName: "Alle Standorte" };
     } else {
-      const remote = await CloudStore.loadReportsForLocations(locations.map((location) => location.id));
-      const locationNames = Object.fromEntries(locations.map((location) => [location.id, location.name]));
+      const remote = await CloudStore.loadReportsForLocations(scopeLocations.map((location) => location.id));
+      const locationNames = Object.fromEntries(scopeLocations.map((location) => [location.id, location.name]));
       const allSales = (remote.sales || []).map((sale) => ({
         ...sale,
         locationId: sale.location_id || sale.locationId,
@@ -2689,8 +2722,18 @@ $("#billingEmail2Input").addEventListener("change", (event) => {
 });
 $("#createLocationButton").addEventListener("click", async (event) => {
   event.preventDefault();
-  const name = $("#newLocationInput").value.trim();
-  if (!name) return;
+  const rawLocationName = $("#newLocationInput").value.trim();
+  if (!rawLocationName) return;
+  const name = canonicalLocationName(rawLocationName);
+  if (!name || !STANDARD_LOCATION_NAMES.includes(name)) {
+    showToast("Es sind nur Punschhütte und Bar erlaubt");
+    return;
+  }
+  const existing = locations.find((location) => location.name === name);
+  if (existing) {
+    showToast(`${name} ist bereits vorhanden`);
+    return;
+  }
   try {
     if (localMode) {
       const location = { id: uid("location"), name, role: "admin" };
