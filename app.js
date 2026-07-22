@@ -1313,6 +1313,69 @@ async function exportReport() {
   showToast("Excel-Abrechnung wurde erstellt");
 }
 
+function bytesToBase64(bytes) {
+  const array = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < array.length; index += chunkSize) {
+    binary += String.fromCharCode(...array.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function textToBase64(text) {
+  return bytesToBase64(new TextEncoder().encode(text));
+}
+
+function wrapBase64(value) {
+  return String(value).match(/.{1,76}/g)?.join("\r\n") || "";
+}
+
+function encodedMailHeader(value) {
+  return `=?UTF-8?B?${textToBase64(value)}?=`;
+}
+
+function safeMailFilename(value) {
+  return String(value || "Abrechnung.xlsx").replace(/[\\/:*?"<>|]+/g, "_");
+}
+
+function downloadEmlWithAttachment({ recipients, subject, body, filename, bytes }) {
+  const boundary = `----Kassenraum-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const safeFilename = safeMailFilename(filename);
+  const eml = [
+    "X-Unsent: 1",
+    `To: ${recipients.join(", ")}`,
+    `Subject: ${encodedMailHeader(subject)}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrapBase64(textToBase64(body)),
+    "",
+    `--${boundary}`,
+    `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; name*=UTF-8''${encodeURIComponent(safeFilename)}`,
+    "Content-Transfer-Encoding: base64",
+    `Content-Disposition: attachment; filename*=UTF-8''${encodeURIComponent(safeFilename)}`,
+    "",
+    wrapBase64(bytesToBase64(bytes)),
+    "",
+    `--${boundary}--`,
+    ""
+  ].join("\r\n");
+  const blob = new Blob([eml], { type: "message/rfc822" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${safeFilename.replace(/\.xlsx$/i, "")}.eml`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function emailReport() {
   const recipients = [appSettings.billingEmail, appSettings.billingEmail2].map((email) => String(email || "").trim()).filter(Boolean);
   if (!recipients.length) {
@@ -1364,6 +1427,16 @@ async function emailReport() {
       }
       return;
     }
+
+    downloadEmlWithAttachment({
+      recipients,
+      subject,
+      body,
+      filename: payload.filename,
+      bytes
+    });
+    showToast("Maildatei mit Excel-Anhang wurde erstellt");
+    return;
 
     XlsxExport.downloadWorkbook(payload.workbook, payload.filename);
     const fallbackBody = `${body}\n\nDie Exceldatei wurde heruntergeladen. Bitte diese Datei an die E-Mail anhängen.`;
