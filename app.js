@@ -492,8 +492,14 @@ function renderProducts() {
     return visibleIds.has(product.categoryId) && matchesCategory && product.name.toLowerCase().includes(search);
   });
   const selected = categoryFor(selectedCategory);
+  const productGrid = $("#productGrid");
+  const tabletColumns = filtered.length <= 6 ? 3 : filtered.length <= 12 ? 4 : filtered.length <= 20 ? 5 : 6;
+  const tabletRows = Math.max(1, Math.ceil(filtered.length / tabletColumns));
+  productGrid.style.setProperty("--tablet-product-columns", tabletColumns);
+  productGrid.style.setProperty("--tablet-product-rows", tabletRows);
+  productGrid.dataset.density = filtered.length > 24 ? "very-dense" : filtered.length > 16 ? "dense" : "normal";
   $("#productTitle").textContent = selected ? selected.name : "Alle Artikel";
-  $("#productGrid").innerHTML = filtered.map((product) => {
+  productGrid.innerHTML = filtered.map((product) => {
     const category = categoryFor(product.categoryId) || { name: "Ohne Kategorie", color: "#777" };
     return `<button class="product-card" data-id="${product.id}" style="--card-color:${category.color}">
       <span class="product-category"><i></i>${escapeHtml(category.name)}</span>
@@ -503,8 +509,8 @@ function renderProducts() {
     </button>`;
   }).join("");
   $("#emptyProducts").classList.toggle("hidden", filtered.length > 0);
-  $("#productGrid").classList.toggle("hidden", filtered.length === 0);
-  $("#productGrid").querySelectorAll(".product-card").forEach((button) =>
+  productGrid.classList.toggle("hidden", filtered.length === 0);
+  productGrid.querySelectorAll(".product-card").forEach((button) =>
     button.addEventListener("click", () => addToCart(button.dataset.id))
   );
 }
