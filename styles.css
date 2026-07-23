@@ -477,3 +477,124 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .time-form-grid button, .time-inline-form button { width: 100%; }
   .report-table th, .report-table td { padding: 12px 14px; }
 }
+
+/* Touch-optimierte Ansicht für 11–13,3-Zoll-Tablets im Querformat. */
+@media (min-width: 900px) and (max-width: 1500px) and (orientation: landscape) {
+  body { font-size: 16px; }
+
+  .topbar {
+    min-height: 74px;
+    padding-inline: clamp(16px, 2vw, 28px);
+  }
+  .topbar-actions { gap: 9px; }
+  .brand { min-height: 48px; }
+  .brand-mark { width: 42px; height: 42px; }
+  .brand strong { font-size: 17px; }
+  .brand small, .location-picker { font-size: 12px; }
+  .location-picker select {
+    min-height: 46px;
+    max-width: 150px;
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+  .date-chip { display: none; }
+  .report-button {
+    min-width: 48px;
+    height: 48px;
+    padding-inline: 13px;
+    font-size: 14px;
+  }
+  .icon-button { width: 48px; height: 48px; }
+  .report-button svg, .icon-button svg { width: 20px; }
+
+  .active-employees-bar { min-height: 48px; }
+  .active-employee-chip { min-height: 34px; padding: 8px 12px; font-size: 12px; }
+
+  .category-panel { padding: 20px 12px; }
+  .category-nav { gap: 8px; }
+  .category-button {
+    min-height: 48px;
+    padding: 12px 13px;
+    font-size: 15px;
+  }
+  .category-dot { width: 13px; height: 13px; }
+  .category-button .count { font-size: 12px; }
+
+  .product-section { padding: 26px clamp(20px, 2.3vw, 34px); }
+  .product-header { margin-bottom: 22px; }
+  h1 { font-size: 30px; }
+  h2 { font-size: 22px; }
+  .eyebrow { font-size: 11px; }
+  .search-box {
+    width: min(290px, 44%);
+    min-height: 48px;
+    padding: 11px 14px;
+  }
+  .search-box input { font-size: 16px; }
+  .product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 13px;
+  }
+  .product-card {
+    min-height: 150px;
+    padding: 16px;
+    border-radius: 15px;
+  }
+  .product-card strong { font-size: 17px; }
+  .product-price { font-size: 17px; }
+  .product-add { width: 34px; height: 34px; font-size: 22px; }
+
+  .cart-header { padding: 24px 20px 18px; }
+  .text-button { min-height: 44px; padding: 10px; font-size: 13px; }
+  .cart-items { padding-inline: 15px; }
+  .cart-item { padding-block: 14px; }
+  .cart-item strong { font-size: 15px; line-height: 1.35; }
+  .quantity-control { gap: 8px; }
+  .quantity-control button { width: 40px; height: 40px; font-size: 20px; }
+  .quantity-control span { min-width: 24px; font-size: 15px; text-align: center; }
+  .cart-footer { padding: 18px 20px 20px; }
+  .summary-row { font-size: 14px; }
+  .summary-row.total { font-size: 21px; }
+  .checkout-button { min-height: 54px; padding: 15px 18px; font-size: 17px; }
+
+  .primary-button, .secondary-button, .danger-button, .file-button {
+    min-height: 46px;
+    padding: 12px 16px;
+  }
+  .back-button, .settings-tab, .report-filter { min-height: 46px; }
+  .row-action { min-height: 42px; padding: 10px 12px; }
+  .settings-row { min-height: 68px; }
+
+  .login-card input,
+  .admin-card input,
+  .admin-card select,
+  .form-fields input,
+  .form-fields select,
+  .payment-entry input,
+  .report-date input,
+  .cash-balance-panel input,
+  .clock-station select,
+  .time-filters input,
+  .time-card input,
+  .time-card select {
+    min-height: 48px;
+    font-size: 16px;
+  }
+  .login-card label, .admin-card label,
+  .clock-station label, .time-filters label, .time-card label {
+    font-size: 13px;
+  }
+  .editor-dialog { max-height: calc(100vh - 32px); overflow-y: auto; }
+  .dialog-close { width: 44px; height: 44px; }
+}
+
+@media (min-width: 1110px) and (max-width: 1500px) and (orientation: landscape) {
+  .pos-layout { grid-template-columns: 180px minmax(430px, 1fr) 340px; }
+}
+
+@media (min-width: 900px) and (max-width: 1100px) and (orientation: landscape) {
+  .category-panel { padding: 9px 16px; }
+  .category-button { min-height: 46px; }
+  .product-section { padding-top: 22px; }
+  .report-button span { display: none; }
+}
