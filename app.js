@@ -54,6 +54,7 @@ let cloudSaveTimer;
 let realtimeReloadTimer;
 let timeReloadTimer;
 let adminReportRefreshTimer;
+let automaticReportTimer;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -371,6 +372,7 @@ async function switchLocation(locationId, background = false) {
   selectInitialCategory();
   renderAll();
   if (!$("#timeClockView").classList.contains("hidden")) await reloadTimeTracking();
+  if (!background) startAutomaticReportSubmission();
 }
 
 async function startCloudSession() {
@@ -405,6 +407,7 @@ async function startCloudSession() {
   await switchLocation(preferred);
   await reloadTimeTracking();
   CloudStore.flushQueue();
+  startAutomaticReportSubmission();
   return true;
 }
 
@@ -428,6 +431,7 @@ function startLocalMode() {
   loadLocalLocation(currentLocationId);
   selectInitialCategory();
   showApplication();
+  startAutomaticReportSubmission();
 }
 
 function visibleCategories() {
@@ -1362,13 +1366,14 @@ function submittedReportCatalog(report) {
 function downloadSubmittedReport(report) {
   const dateKey = report.business_date || report.businessDate;
   const locationName = submittedReportLocationName(report);
+  const isTotal = submittedReportType(report) === "total";
   const sheet = buildSubmittedReportSheet(submittedReportSales(report), submittedReportCatalog(report), {
-    dateLabel: formatDateKey(dateKey),
-    sheetName: `${locationName} ${formatDateKey(dateKey)}`,
+    dateLabel: isTotal ? "Gesamtabrechnung" : formatDateKey(dateKey),
+    sheetName: isTotal ? "Gesamtabrechnung" : `${locationName} ${formatDateKey(dateKey)}`,
     cashBalance: report.cash_balance ?? report.cashBalance,
     locationName
   });
-  XlsxExport.downloadWorkbook(sheet, `Abrechnung_${locationName}_${dateKey}.xlsx`);
+  XlsxExport.downloadWorkbook(sheet, isTotal ? `Gesamtabrechnung_${locationName}.xlsx` : `Abrechnung_${locationName}_${dateKey}.xlsx`);
 }
 
 function downloadAllSubmittedReports() {
@@ -1376,9 +1381,14 @@ function downloadAllSubmittedReports() {
     showToast("Noch keine Abrechnungen übermittelt");
     return;
   }
-  const ordered = [...submittedReports].sort((a, b) =>
+  const dailyReports = submittedReports.filter((report) => submittedReportType(report) === "daily");
+  const ordered = [...dailyReports].sort((a, b) =>
     String(a.business_date || a.businessDate).localeCompare(String(b.business_date || b.businessDate))
   );
+  if (!ordered.length) {
+    showToast("Noch keine Tagesabrechnungen übermittelt");
+    return;
+  }
   const sheets = ordered.map((report) => {
     const dateKey = report.business_date || report.businessDate;
     const locationName = submittedReportLocationName(report);
@@ -1416,41 +1426,85 @@ async function refreshSubmittedReports() {
   submittedReports = await CloudStore.loadSubmittedReports();
 }
 
-async function submitCurrentReport() {
-  if (isAdminUser()) return;
-  const dateKey = businessDateKey(new Date());
-  const reportSales = salesForBusinessDate(sales, dateKey);
+function previousDateKey(dateKey) {
+  const date = new Date(`${dateKey}T12:00:00`);
+  date.setDate(date.getDate() - 1);
+  return localDateKey(date);
+}
+
+function submittedReportType(report) {
+  return report.report_type || report.reportType || "daily";
+}
+
+async function transmitReport({ dateKey, reportType = "daily", automatic = false }) {
+  if (isAdminUser()) return false;
+  const reportSales = reportType === "total" ? [...sales] : salesForBusinessDate(sales, dateKey);
   if (!reportSales.length) {
-    showToast("Für diesen Geschäftstag sind keine Bons vorhanden");
+    if (!automatic) showToast("Für diesen Zeitraum sind keine Bons vorhanden");
+    return false;
+  }
+  const cashBalance = reportType === "total"
+    ? Object.values(cashBalances).map(Number).filter(Number.isFinite).reduce((sum, value) => sum + value, 0)
+    : (Number.isFinite(Number(cashBalances[dateKey])) ? Number(cashBalances[dateKey]) : null);
+
+  if (localMode) {
+    const existing = readStoredJson("kassenraum-submitted-reports", []);
+    const locationName = locations.find((location) => location.id === currentLocationId)?.name || "Standort";
+    const match = existing.find((item) =>
+      String(item.locationId) === String(currentLocationId)
+      && (item.businessDate || item.business_date) === dateKey
+      && submittedReportType(item) === reportType
+    );
+    const report = {
+      id: match?.id || uid("report"),
+      locationId: currentLocationId,
+      locationName,
+      businessDate: dateKey,
+      reportType,
+      sales: structuredClone(reportSales),
+      catalog: structuredClone(data),
+      cashBalance,
+      submittedAt: new Date().toISOString()
+    };
+    const remaining = existing.filter((item) => String(item.id) !== String(report.id));
+    localStorage.setItem("kassenraum-submitted-reports", JSON.stringify([report, ...remaining]));
+  } else {
+    await CloudStore.submitReport(currentLocationId, dateKey, reportSales, data, cashBalance, reportType);
+  }
+  if (!automatic) {
+    showToast(reportType === "total"
+      ? "Gesamtabrechnung wurde übermittelt"
+      : `Abrechnung ${formatDateKey(dateKey)} wurde übermittelt`);
+  }
+  return true;
+}
+
+function openSubmitReportDialog() {
+  if (isAdminUser()) return;
+  $("#submitReportRange").value = "yesterday";
+  $("#submitReportDate").value = businessDateKey(new Date());
+  $("#submitReportDateWrap").classList.add("hidden");
+  $("#submitReportDialog").showModal();
+}
+
+async function submitSelectedReport(event) {
+  event.preventDefault();
+  const range = $("#submitReportRange").value;
+  const currentBusinessDate = businessDateKey(new Date());
+  const dateKey = range === "yesterday"
+    ? previousDateKey(currentBusinessDate)
+    : (range === "date" ? $("#submitReportDate").value : currentBusinessDate);
+  if (!dateKey) {
+    showToast("Bitte ein Datum auswählen");
     return;
   }
-  if (!confirm(`Abrechnung für den Geschäftstag ${formatDateKey(dateKey)} an den Admin übermitteln?`)) return;
-
-  const button = $("#submitReportButton");
+  const button = $("#submitReportConfirm");
   const originalText = button.textContent;
   button.disabled = true;
   button.textContent = "Wird übermittelt …";
   try {
-    const cashBalance = Number.isFinite(Number(cashBalances[dateKey])) ? Number(cashBalances[dateKey]) : null;
-    if (localMode) {
-      const existing = readStoredJson("kassenraum-submitted-reports", []);
-      const locationName = locations.find((location) => location.id === currentLocationId)?.name || "Standort";
-      const report = {
-        id: existing.find((item) => item.locationId === currentLocationId && item.businessDate === dateKey)?.id || uid("report"),
-        locationId: currentLocationId,
-        locationName,
-        businessDate: dateKey,
-        sales: structuredClone(reportSales),
-        catalog: structuredClone(data),
-        cashBalance,
-        submittedAt: new Date().toISOString()
-      };
-      const remaining = existing.filter((item) => !(item.locationId === currentLocationId && item.businessDate === dateKey));
-      localStorage.setItem("kassenraum-submitted-reports", JSON.stringify([report, ...remaining]));
-    } else {
-      await CloudStore.submitReport(currentLocationId, dateKey, reportSales, data, cashBalance);
-    }
-    showToast(`Abrechnung ${formatDateKey(dateKey)} wurde übermittelt`);
+    const sent = await transmitReport({ dateKey, reportType: range === "all" ? "total" : "daily" });
+    if (sent) $("#submitReportDialog").close();
   } catch (error) {
     showToast(error.message || "Abrechnung konnte nicht übermittelt werden");
   } finally {
@@ -1459,10 +1513,34 @@ async function submitCurrentReport() {
   }
 }
 
+async function submitCompletedBusinessDayAutomatically() {
+  if (isAdminUser() || !currentLocationId || currentLocationId === "local" && !localMode) return;
+  const completedDate = previousDateKey(businessDateKey(new Date()));
+  const markerKey = `kassenraum-auto-report:${currentLocationId}`;
+  if (localStorage.getItem(markerKey) === completedDate) return;
+  try {
+    const sent = await transmitReport({ dateKey: completedDate, automatic: true });
+    if (sent) {
+      localStorage.setItem(markerKey, completedDate);
+      showToast(`Tagesabrechnung ${formatDateKey(completedDate)} automatisch übermittelt`);
+    }
+  } catch (_) {}
+}
+
+function startAutomaticReportSubmission() {
+  clearInterval(automaticReportTimer);
+  if (isAdminUser()) return;
+  submitCompletedBusinessDayAutomatically();
+  automaticReportTimer = setInterval(submitCompletedBusinessDayAutomatically, 60 * 1000);
+}
+
 async function deleteSubmittedReport(reportId) {
   if (!isAdminUser()) return;
   const report = submittedReports.find((item) => String(item.id) === String(reportId));
-  if (!report || !confirm(`Abrechnung ${formatDateKey(report.business_date || report.businessDate)} von ${submittedReportLocationName(report)} löschen?`)) return;
+  const reportLabel = report && submittedReportType(report) === "total"
+    ? "Gesamtabrechnung"
+    : (report ? `Abrechnung ${formatDateKey(report.business_date || report.businessDate)}` : "");
+  if (!report || !confirm(`${reportLabel} von ${submittedReportLocationName(report)} löschen?`)) return;
   try {
     if (localMode) {
       submittedReports = submittedReports.filter((item) => String(item.id) !== String(reportId));
@@ -1489,8 +1567,9 @@ function renderSubmittedReports() {
     const summary = aggregateSales(reportSales);
     const dateKey = report.business_date || report.businessDate;
     const submittedAt = report.submitted_at || report.submittedAt;
+    const reportLabel = submittedReportType(report) === "total" ? "Gesamtabrechnung" : formatDateKey(dateKey);
     return `<tr>
-      <td><strong>${escapeHtml(formatDateKey(dateKey))}</strong></td>
+      <td><strong>${escapeHtml(reportLabel)}</strong></td>
       <td>${escapeHtml(submittedReportLocationName(report))}</td>
       <td>${escapeHtml(formatDateTime(submittedAt))}</td>
       <td class="number">${reportSales.length}</td>
@@ -2969,6 +3048,7 @@ function showToast(message) {
 
 async function logout() {
   stopAdminReportAutoRefresh();
+  clearInterval(automaticReportTimer);
   try {
     if (!localMode) await CloudStore.signOut();
   } catch (_) {}
@@ -3056,8 +3136,13 @@ $("#receiptLocationFilter").addEventListener("change", async (event) => {
 });
 $("#cashBalanceInput").addEventListener("input", saveCashBalance);
 $("#exportReportButton").addEventListener("click", exportReport);
-$("#emailReportButton").addEventListener("click", emailReport);
-$("#submitReportButton").addEventListener("click", submitCurrentReport);
+$("#submitReportButton").addEventListener("click", openSubmitReportDialog);
+$("#submitReportForm").addEventListener("submit", submitSelectedReport);
+$("#submitReportRange").addEventListener("change", (event) => {
+  $("#submitReportDateWrap").classList.toggle("hidden", event.target.value !== "date");
+});
+$("#submitReportDialogClose").addEventListener("click", () => $("#submitReportDialog").close());
+$("#submitReportCancel").addEventListener("click", () => $("#submitReportDialog").close());
 $("#downloadAllSubmittedReportsButton").addEventListener("click", downloadAllSubmittedReports);
 $("#syncReceiptsButton").addEventListener("click", syncReceiptsForAdmin);
 $("#productSearch").addEventListener("input", renderProducts);

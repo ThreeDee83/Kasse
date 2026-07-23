@@ -318,7 +318,6 @@
           <div class="report-actions">
             <button id="submitReportButton" class="primary-button staff-only">Abrechnung übermitteln</button>
             <button id="syncReceiptsButton" class="secondary-button admin-only">Bons synchronisieren</button>
-            <button id="emailReportButton" class="secondary-button">Excel per E-Mail senden</button>
             <button id="exportReportButton" class="primary-button export-button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
               Excel exportieren
@@ -508,6 +507,33 @@
     <div class="dialog-actions">
       <button type="button" class="primary-button" id="receiptDialogOk">Schließen</button>
     </div>
+  </dialog>
+
+  <dialog id="submitReportDialog" class="editor-dialog">
+    <form id="submitReportForm">
+      <div class="dialog-header">
+        <div><p class="eyebrow">ABRECHNUNG</p><h2>Abrechnung übermitteln</h2></div>
+        <button type="button" class="dialog-close" id="submitReportDialogClose" aria-label="Schließen">×</button>
+      </div>
+      <div class="form-fields">
+        <label>Zeitraum
+          <select id="submitReportRange">
+            <option value="yesterday">Gestern</option>
+            <option value="today">Heute</option>
+            <option value="date">Benutzerdefiniertes Datum</option>
+            <option value="all">Gesamtabrechnung</option>
+          </select>
+        </label>
+        <label id="submitReportDateWrap" class="hidden">Datum
+          <input id="submitReportDate" type="date">
+        </label>
+        <p class="settings-hint">Der Geschäftstag läuft jeweils von 04:00 bis 03:59 Uhr.</p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button" id="submitReportCancel">Abbrechen</button>
+        <button type="submit" class="primary-button" id="submitReportConfirm">Übermitteln</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="rateChangeDialog" class="editor-dialog">

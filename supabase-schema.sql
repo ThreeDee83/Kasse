@@ -42,6 +42,7 @@ create table if not exists public.report_submissions (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null references public.locations(id) on delete cascade,
   business_date date not null,
+  report_type text not null default 'daily' check (report_type in ('daily', 'total')),
   sales jsonb not null default '[]'::jsonb,
   catalog jsonb not null default '{"categories":[],"products":[]}'::jsonb,
   cash_balance numeric(12,2),
@@ -49,6 +50,13 @@ create table if not exists public.report_submissions (
   submitted_at timestamptz not null default now(),
   unique (location_id, business_date)
 );
+
+alter table public.report_submissions add column if not exists report_type text not null default 'daily';
+alter table public.report_submissions drop constraint if exists report_submissions_report_type_check;
+alter table public.report_submissions add constraint report_submissions_report_type_check check (report_type in ('daily', 'total'));
+alter table public.report_submissions drop constraint if exists report_submissions_location_id_business_date_key;
+create unique index if not exists report_submissions_location_date_type_key
+on public.report_submissions (location_id, business_date, report_type);
 
 create table if not exists public.employees (
   id uuid primary key default gen_random_uuid(),
