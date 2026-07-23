@@ -265,24 +265,18 @@ begin
     raise exception 'Admin role required';
   end if;
 
-  with admin_locations as (
-    select location_id
-    from user_locations
-    where user_id = auth.uid() and role = 'admin'
-  ),
-  shared_members as (
+  with shared_members as (
     select
       memberships.user_id,
       case when bool_or(memberships.role = 'admin') then 'admin' else 'staff' end as role
     from user_locations memberships
-    join admin_locations on admin_locations.location_id = memberships.location_id
     group by memberships.user_id
   ),
   synchronized as (
     insert into user_locations (user_id, location_id, role)
-    select shared_members.user_id, admin_locations.location_id, shared_members.role
+    select shared_members.user_id, locations.id, shared_members.role
     from shared_members
-    cross join admin_locations
+    cross join locations
     on conflict (user_id, location_id) do update
       set role = case
         when user_locations.role = 'admin' or excluded.role = 'admin' then 'admin'
@@ -323,6 +317,59 @@ begin
   get diagnostics affected_rows = row_count;
   perform public.sync_location_memberships();
   return affected_rows;
+end $$;
+
+create or replace function public.sync_master_data(catalog_data jsonb, employee_data jsonb)
+returns jsonb language plpgsql security definer set search_path = public
+as $$
+declare
+  affected_locations integer := 0;
+  affected_employees integer := 0;
+  employee_record jsonb;
+  employee_name text;
+  employee_rate numeric(10,2);
+  employee_active boolean;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if not exists (
+    select 1 from user_locations where user_id = auth.uid() and role = 'admin'
+  ) then
+    raise exception 'Admin role required';
+  end if;
+  if catalog_data is null
+    or jsonb_typeof(catalog_data->'categories') <> 'array'
+    or jsonb_typeof(catalog_data->'products') <> 'array'
+    or employee_data is null
+    or jsonb_typeof(employee_data) <> 'array'
+  then
+    raise exception 'Invalid master data';
+  end if;
+
+  insert into location_state (location_id, data, updated_at)
+  select id, catalog_data, now() from locations
+  on conflict (location_id) do update
+    set data = excluded.data, updated_at = excluded.updated_at;
+  get diagnostics affected_locations = row_count;
+
+  for employee_record in select value from jsonb_array_elements(employee_data)
+  loop
+    employee_name := trim(coalesce(employee_record->>'name', ''));
+    employee_rate := greatest(0, coalesce((employee_record->>'hourlyRate')::numeric, 0));
+    employee_active := coalesce((employee_record->>'active')::boolean, true);
+    if employee_name <> '' then
+      update employees
+      set name = employee_name, hourly_rate = employee_rate, active = employee_active
+      where lower(trim(name)) = lower(employee_name);
+      if not found then
+        insert into employees (location_id, name, hourly_rate, active)
+        values (null, employee_name, employee_rate, employee_active);
+      end if;
+      affected_employees := affected_employees + 1;
+    end if;
+  end loop;
+
+  perform public.sync_location_memberships();
+  return jsonb_build_object('locations', affected_locations, 'employees', affected_employees);
 end $$;
 
 create or replace function public.create_location(location_name text)
@@ -419,6 +466,7 @@ revoke all on function public.create_location(text) from public;
 revoke all on function public.delete_location(uuid) from public;
 revoke all on function public.sync_location_memberships() from public;
 revoke all on function public.sync_catalog_to_all_locations(jsonb) from public;
+revoke all on function public.sync_master_data(jsonb, jsonb) from public;
 revoke all on function public.clock_in_employee(uuid, uuid) from public;
 revoke all on function public.clock_out_employee(uuid) from public;
 grant execute on function public.is_location_member(uuid) to authenticated;
@@ -429,6 +477,7 @@ grant execute on function public.create_location(text) to authenticated;
 grant execute on function public.delete_location(uuid) to authenticated;
 grant execute on function public.sync_location_memberships() to authenticated;
 grant execute on function public.sync_catalog_to_all_locations(jsonb) to authenticated;
+grant execute on function public.sync_master_data(jsonb, jsonb) to authenticated;
 grant execute on function public.clock_in_employee(uuid, uuid) to authenticated;
 grant execute on function public.clock_out_employee(uuid) to authenticated;
 

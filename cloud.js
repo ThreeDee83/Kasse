@@ -149,6 +149,23 @@
     return { ...fallback, allLocations: false, fallback: true };
   }
 
+  async function syncMasterData(data, employees, fallbackLocationIds = [], locationId = null) {
+    const rpcResult = await client.rpc("sync_master_data", {
+      catalog_data: data,
+      employee_data: (employees || []).map((employee) => ({
+        name: String(employee.name || "").trim(),
+        hourlyRate: Number(employee.hourlyRate ?? employee.hourly_rate ?? 0),
+        active: employee.active !== false
+      }))
+    });
+    if (!rpcResult.error) return { data: rpcResult.data, allLocations: true, atomic: true };
+    if (!["42883", "PGRST202"].includes(rpcResult.error.code)) throw rpcResult.error;
+
+    const catalogResult = await syncCatalogToAllLocations(data, fallbackLocationIds);
+    const employeeResult = await syncEmployees(employees, locationId);
+    return { ...catalogResult, employees: employeeResult?.synced || 0, atomic: false, fallback: true };
+  }
+
   function normalizedName(name) {
     return String(name || "").trim().toLocaleLowerCase("de");
   }
@@ -390,7 +407,7 @@
 
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, loadLocation, loadReportsForLocations,
-    saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, deleteCash, deleteSales,
+    saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncMasterData, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, deleteCash, deleteSales,
     loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue
   };

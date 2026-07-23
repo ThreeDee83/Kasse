@@ -2466,8 +2466,7 @@ async function syncMasterDataToUsers() {
     } catch (_) {}
     const locationIds = adminSyncLocationIds();
     if (!locationIds.length) throw new Error("Keine Standorte zum Synchronisieren gefunden.");
-    const catalogResult = await CloudStore.syncCatalogToAllLocations(data, locationIds);
-    await CloudStore.syncEmployees(employees, currentLocationId);
+    const catalogResult = await CloudStore.syncMasterData(data, employees, locationIds, currentLocationId);
     localStorage.setItem(scopedKey("kassenraum-data"), JSON.stringify(data));
     await reloadTimeTracking();
     renderAll();
