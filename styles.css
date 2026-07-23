@@ -267,11 +267,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .report-table .zero-price { color: var(--green); }
 .report-table-card > .list-empty { margin: 16px; }
 .receipt-history-card { margin-top: 16px; }
-.receipt-history-card summary { cursor: pointer; list-style: none; }
-.receipt-history-card summary::-webkit-details-marker { display: none; }
-.receipt-history-card summary::after { content: "▾"; color: var(--muted); transition: transform .18s ease; }
-.receipt-history-card:not([open]) summary::after { transform: rotate(-90deg); }
-.receipt-history-card[open] summary { border-bottom: 1px solid var(--line); }
+.receipt-history-card .report-table-header { border-bottom: 1px solid var(--line); }
 .receipt-history-tools { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .receipt-location-filter { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
 .receipt-location-filter select { min-width: 160px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); color: var(--ink); font: inherit; text-transform: none; letter-spacing: 0; }
@@ -290,6 +286,8 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .receipt-admin-actions { display: flex; justify-content: flex-end; margin: -4px 0 14px; }
 .receipt-minus-button { width: 30px; height: 30px; border: 1px solid var(--danger); border-radius: 8px; background: transparent; color: var(--danger); cursor: pointer; font-size: 20px; line-height: 1; font-weight: 800; }
 .receipt-minus-button:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.submitted-report-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.submitted-report-actions button { padding: 8px 10px; white-space: nowrap; }
 
 .admin-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .admin-card { padding: 21px; border: 1px solid var(--line); border-radius: 14px; background: var(--white); }

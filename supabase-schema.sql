@@ -38,6 +38,18 @@ create table if not exists public.cash_balances (
   primary key (location_id, date_key)
 );
 
+create table if not exists public.report_submissions (
+  id uuid primary key default gen_random_uuid(),
+  location_id uuid not null references public.locations(id) on delete cascade,
+  business_date date not null,
+  sales jsonb not null default '[]'::jsonb,
+  catalog jsonb not null default '{"categories":[],"products":[]}'::jsonb,
+  cash_balance numeric(12,2),
+  submitted_by uuid references auth.users(id) on delete set null default auth.uid(),
+  submitted_at timestamptz not null default now(),
+  unique (location_id, business_date)
+);
+
 create table if not exists public.employees (
   id uuid primary key default gen_random_uuid(),
   location_id uuid references public.locations(id) on delete set null,
@@ -538,6 +550,7 @@ alter table public.user_locations enable row level security;
 alter table public.location_state enable row level security;
 alter table public.sales enable row level security;
 alter table public.cash_balances enable row level security;
+alter table public.report_submissions enable row level security;
 alter table public.employees enable row level security;
 alter table public.time_entries enable row level security;
 alter table public.employee_bonuses enable row level security;
@@ -546,6 +559,7 @@ alter table public.locations replica identity full;
 alter table public.employees replica identity full;
 alter table public.time_entries replica identity full;
 alter table public.employee_bonuses replica identity full;
+alter table public.report_submissions replica identity full;
 
 drop policy if exists "members read locations" on public.locations;
 drop policy if exists "admins update locations" on public.locations;
@@ -561,6 +575,10 @@ drop policy if exists "members read cash" on public.cash_balances;
 drop policy if exists "members insert cash" on public.cash_balances;
 drop policy if exists "members update cash" on public.cash_balances;
 drop policy if exists "admins delete cash" on public.cash_balances;
+drop policy if exists "members read submitted reports" on public.report_submissions;
+drop policy if exists "members submit reports" on public.report_submissions;
+drop policy if exists "members update submitted reports" on public.report_submissions;
+drop policy if exists "admins delete submitted reports" on public.report_submissions;
 drop policy if exists "members read employees" on public.employees;
 drop policy if exists "admins insert employees" on public.employees;
 drop policy if exists "admins update employees" on public.employees;
@@ -588,6 +606,10 @@ create policy "members read cash" on public.cash_balances for select using (is_l
 create policy "members insert cash" on public.cash_balances for insert with check (is_location_member(location_id));
 create policy "members update cash" on public.cash_balances for update using (is_location_member(location_id));
 create policy "admins delete cash" on public.cash_balances for delete using (is_location_admin(location_id));
+create policy "members read submitted reports" on public.report_submissions for select using (is_location_member(location_id) or is_any_admin());
+create policy "members submit reports" on public.report_submissions for insert with check (is_location_member(location_id));
+create policy "members update submitted reports" on public.report_submissions for update using (is_location_member(location_id)) with check (is_location_member(location_id));
+create policy "admins delete submitted reports" on public.report_submissions for delete using (is_any_admin());
 create policy "members read employees" on public.employees for select using (is_business_user());
 create policy "admins insert employees" on public.employees for insert with check (is_any_admin());
 create policy "admins update employees" on public.employees for update using (is_any_admin()) with check (is_any_admin());
@@ -616,6 +638,12 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.cash_balances;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.report_submissions;
 exception when duplicate_object then null;
 end $$;
 

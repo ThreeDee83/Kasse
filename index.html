@@ -46,10 +46,6 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V2"/></svg>
           <span>Abrechnung</span>
         </button>
-        <button class="report-button" id="receiptHistoryButton" aria-label="Bonverlauf öffnen">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4V3Z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
-          <span>Bonverlauf</span>
-        </button>
         <button class="report-button" id="timeClockButton" aria-label="Arbeitszeit öffnen">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
           <span>Arbeitszeit</span>
@@ -320,8 +316,8 @@
             <p>Umsätze und ausgegebene Artikel im Überblick.</p>
           </div>
           <div class="report-actions">
+            <button id="submitReportButton" class="primary-button staff-only">Abrechnung übermitteln</button>
             <button id="syncReceiptsButton" class="secondary-button admin-only">Bons synchronisieren</button>
-            <button id="deleteFilteredReceiptsButton" class="danger-button admin-only">Alle Bons löschen</button>
             <button id="emailReportButton" class="secondary-button">Excel per E-Mail senden</button>
             <button id="exportReportButton" class="primary-button export-button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
@@ -367,6 +363,20 @@
         <article><span>Artikel gesamt</span><strong id="reportItemCount">0</strong><small id="reportFreeCount">0 davon mit 0 €</small></article>
       </section>
 
+      <section id="submittedReportsPanel" class="report-table-card admin-only">
+        <div class="report-table-header">
+          <div><h2>Übermittelte Abrechnungen</h2><p>Tagesabschlüsse der einzelnen Standorte als Excel herunterladen.</p></div>
+          <button id="downloadAllSubmittedReportsButton" class="primary-button">Gesamtabrechnung herunterladen</button>
+        </div>
+        <div class="report-table-scroll">
+          <table class="report-table">
+            <thead><tr><th>Geschäftstag</th><th>Standort</th><th>Übermittelt</th><th class="number">Bons</th><th class="number">Umsatz</th><th></th></tr></thead>
+            <tbody id="submittedReportsBody"></tbody>
+          </table>
+        </div>
+        <div id="emptySubmittedReports" class="list-empty hidden">Noch keine Abrechnung übermittelt.</div>
+      </section>
+
       <section class="report-table-card">
         <div class="report-table-header">
           <div><h2>Artikelübersicht</h2><p>Jeder Artikel wird einmal zusammengefasst.</p></div>
@@ -381,9 +391,9 @@
         <div id="emptyReport" class="list-empty hidden">Für diesen Zeitraum wurden noch keine Verkäufe erfasst.</div>
       </section>
 
-      <details class="report-table-card receipt-history-card">
-        <summary class="report-table-header">
-          <div><h2>Bonverlauf</h2><p>Einzelne Bons des gewählten Zeitraums ein- und ausblenden.</p></div>
+      <section class="report-table-card receipt-history-card">
+        <div class="report-table-header">
+          <div><h2>Bons</h2><p>Alle Bons des gewählten Abrechnungszeitraums.</p></div>
           <div class="receipt-history-tools">
             <label id="receiptLocationFilterWrap" class="receipt-location-filter hidden" onclick="event.stopPropagation()">
               <span>Standort</span>
@@ -393,7 +403,7 @@
             </label>
             <span id="receiptHistoryCount"></span>
           </div>
-        </summary>
+        </div>
         <div class="report-table-scroll">
           <table class="report-table receipt-history-table">
             <thead><tr><th>Zeitpunkt</th><th>Standort</th><th>Artikel</th><th class="number">Summe</th></tr></thead>
@@ -401,7 +411,7 @@
           </table>
         </div>
         <div id="emptyReceiptHistory" class="list-empty hidden">Keine Bons im gewählten Zeitraum.</div>
-      </details>
+      </section>
     </main>
   </div>
 

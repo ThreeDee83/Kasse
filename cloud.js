@@ -280,6 +280,40 @@
     if (error) throw error;
     const { error: cashError } = await client.from("cash_balances").delete().eq("location_id", locationId);
     if (cashError) throw cashError;
+    const { error: reportsError } = await client.from("report_submissions").delete().eq("location_id", locationId);
+    if (reportsError && !["42P01", "PGRST205"].includes(reportsError.code)) throw reportsError;
+  }
+
+  async function submitReport(locationId, businessDate, sales, catalog, cashBalance = null) {
+    const { data, error } = await client.from("report_submissions").upsert({
+      location_id: locationId,
+      business_date: businessDate,
+      sales: sales || [],
+      catalog: catalog || { categories: [], products: [] },
+      cash_balance: Number.isFinite(Number(cashBalance)) ? Number(cashBalance) : null,
+      submitted_by: (await client.auth.getUser()).data.user?.id || null,
+      submitted_at: new Date().toISOString()
+    }, { onConflict: "location_id,business_date" }).select("*").single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function loadSubmittedReports() {
+    const { data, error } = await client
+      .from("report_submissions")
+      .select("*, location:locations(id,name)")
+      .order("business_date", { ascending: false })
+      .order("submitted_at", { ascending: false });
+    if (error) {
+      if (["42P01", "PGRST205"].includes(error.code)) return [];
+      throw error;
+    }
+    return data || [];
+  }
+
+  async function deleteSubmittedReport(reportId) {
+    const { error } = await client.from("report_submissions").delete().eq("id", reportId);
+    if (error) throw error;
   }
 
   async function loadTimeTracking() {
@@ -414,6 +448,7 @@
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, ensureAdminAccess, loadLocation, loadReportsForLocations,
     saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncMasterData, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, deleteCash, deleteSales,
+    submitReport, loadSubmittedReports, deleteSubmittedReport,
     loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue
   };

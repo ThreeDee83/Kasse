@@ -39,6 +39,7 @@ let localMode = false;
 let employees = [];
 let timeEntries = [];
 let employeeBonuses = [];
+let submittedReports = [];
 let cart = [];
 let selectedCategory = "all";
 let editor = { type: null, id: null, color: COLORS[0], copySourceId: null };
@@ -213,6 +214,7 @@ function renderRoleAccess() {
   $("#settingsButton").classList.toggle("hidden", !isAdmin);
   $$(".open-settings").forEach((button) => button.classList.toggle("hidden", !isAdmin));
   $$(".admin-only").forEach((element) => element.classList.toggle("hidden", !isAdmin));
+  $$(".staff-only").forEach((element) => element.classList.toggle("hidden", isAdmin));
   if (!isAdmin && !$("#settingsView").classList.contains("hidden")) {
     $("#settingsView").classList.add("hidden");
     $("#posView").classList.remove("hidden");
@@ -637,6 +639,7 @@ async function syncReceiptsForAdmin() {
   try {
     await refreshAdminReceiptLocations();
     await refreshReportScope(true, true);
+    await refreshSubmittedReports();
     renderReport();
     startAdminReportAutoRefresh();
     const count = filteredReceiptSales().length;
@@ -661,6 +664,7 @@ async function openReports(options = {}) {
   $("#reportDateInput").value = localDateKey(new Date());
   await refreshAdminReceiptLocations();
   await refreshReportScope(true, isAdminUser());
+  if (isAdminUser()) await refreshSubmittedReports();
   renderReport();
   startAdminReportAutoRefresh();
   if (options.showReceiptHistory) {
@@ -677,6 +681,17 @@ function localDateKey(value) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function businessDateKey(value = new Date()) {
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  if (date.getHours() < 4) date.setDate(date.getDate() - 1);
+  return localDateKey(date);
+}
+
+function salesForBusinessDate(entries, dateKey) {
+  return (entries || []).filter((sale) => businessDateKey(sale.timestamp) === dateKey);
 }
 
 function formatDateKey(key) {
@@ -909,34 +924,6 @@ async function deleteReceipt(saleId) {
   }
 }
 
-async function deleteFilteredReceipts() {
-  if (!isAdminUser()) return;
-  const reportSales = filteredReceiptSales();
-  const saleIds = [...new Set(reportSales.map((sale) => sale.id).filter(Boolean))];
-  if (!saleIds.length) {
-    showToast("Keine Bons zum Löschen gefunden");
-    return;
-  }
-  const scopeLabel = reportFilter === "all" ? "alle angezeigten Bons" : `alle Bons vom ${formatDateKey(selectedReportDateKey())}`;
-  if (!confirm(`${saleIds.length} ${saleIds.length === 1 ? "Bon" : "Bons"} löschen (${scopeLabel})?`)) return;
-  if (!confirm("Sicher? Diese Bons werden dauerhaft aus der Abrechnung entfernt.")) return;
-  try {
-    if (localMode) {
-      const idSet = new Set(saleIds.map(String));
-      sales = sales.filter((sale) => !idSet.has(String(sale.id || "")));
-      combinedReportScope.sales = combinedReportScope.sales.filter((sale) => !idSet.has(String(sale.id || "")));
-    } else {
-      await CloudStore.deleteSalesByIds(saleIds);
-    }
-    persistSales();
-    await refreshReportScope(true, isAdminUser());
-    renderReport();
-    showToast(`${saleIds.length} ${saleIds.length === 1 ? "Bon" : "Bons"} gelöscht`);
-  } catch (error) {
-    showToast(error.message || "Bons konnten nicht gelöscht werden");
-  }
-}
-
 function openReceiptDialog(saleId) {
   const sale = findSaleForReceipt(saleId);
   if (!sale) {
@@ -1092,6 +1079,7 @@ function openReceiptDialog(saleId) {
       <span><strong>Bon-ID</strong>${escapeHtml(sale.id || "")}</span>
       <span><strong>Summe</strong>${euro(saleActiveTotal(sale))}</span>
     </div>
+    ${isAdminUser() ? `<div class="receipt-admin-actions"><button class="danger-button" id="deleteReceiptButton" type="button" data-sale-id="${escapeHtml(sale.id || "")}">Bon löschen</button></div>` : ""}
     <div class="report-table-scroll">
       <table class="report-table receipt-detail-table">
         <thead><tr><th>Artikel</th><th class="number">Anzahl</th><th class="number">Preis</th><th class="number">Summe</th><th></th></tr></thead>
@@ -1101,6 +1089,7 @@ function openReceiptDialog(saleId) {
   $$(".receipt-minus-button").forEach((button) => button.addEventListener("click", () =>
     removeReceiptPosition(button.dataset.saleId, Number(button.dataset.itemIndex))
   ));
+  $("#deleteReceiptButton")?.addEventListener("click", (event) => deleteReceipt(event.currentTarget.dataset.saleId));
   $("#receiptDialog").showModal();
 }
 
@@ -1137,6 +1126,7 @@ function renderReport() {
   $("#emptyReport").classList.toggle("hidden", summary.products.length > 0);
   $(".report-table-scroll").classList.toggle("hidden", summary.products.length === 0);
   renderReceiptHistory(reportSales);
+  renderSubmittedReports();
   $("#cashBalancePanel").classList.toggle("hidden", isAll || useCombinedReports() || isAdminUser());
   if (!isAll && !useCombinedReports() && !isAdminUser()) {
     const savedBalance = reportSourceCashBalances()[periodKey];
@@ -1310,6 +1300,215 @@ function buildExportPayload() {
       cashBalance: Number.isFinite(sourceCashBalances[dateKey]) ? sourceCashBalances[dateKey] : null
     })
   };
+}
+
+function buildSubmittedReportSheet(reportSales, catalogData, { dateLabel, sheetName, cashBalance = null, locationName = "" }) {
+  const catalog = catalogData?.categories && catalogData?.products ? catalogData : { categories: [], products: [] };
+  const categoryNames = catalog.categories
+    .filter((category) => catalog.products.some((product) => product.categoryId === category.id && Number(product.price) <= 0))
+    .map((category) => category.name);
+  const categorySet = new Set(categoryNames);
+  const rows = new Map();
+  const ensureRow = (name) => {
+    const cleanName = String(name || "Unbekannter Artikel").trim();
+    const key = cleanName.toLocaleLowerCase("de");
+    if (!rows.has(key)) rows.set(key, { name: cleanName, total: 0, sold: 0, amount: 0, categoryCounts: {} });
+    return rows.get(key);
+  };
+
+  catalog.products.forEach((product) => ensureRow(product.name));
+  (reportSales || []).forEach((sale) => activeSaleItems(sale).forEach((item) => {
+    const row = ensureRow(item.name);
+    const quantity = Number(item.quantity || 0);
+    const price = Number(item.price || 0);
+    row.total += quantity;
+    row.amount += price * quantity;
+    if (price > 0) row.sold += quantity;
+    else {
+      const categoryName = item.categoryName || "Ohne Kategorie";
+      row.categoryCounts[categoryName] = (row.categoryCounts[categoryName] || 0) + quantity;
+      if (!categorySet.has(categoryName)) {
+        categorySet.add(categoryName);
+        categoryNames.push(categoryName);
+      }
+    }
+  }));
+
+  return {
+    sheetName: String(sheetName || dateLabel || "Abrechnung").replace(/[\\/?*[\]:]/g, " ").slice(0, 31),
+    dateLabel,
+    rows: [...rows.values()],
+    categoryNames,
+    cashBalance: Number.isFinite(Number(cashBalance)) ? Number(cashBalance) : null,
+    locationName
+  };
+}
+
+function submittedReportLocationName(report) {
+  return report.location?.name
+    || report.locationName
+    || locations.find((location) => String(location.id) === String(report.location_id || report.locationId))?.name
+    || "Standort";
+}
+
+function submittedReportSales(report) {
+  return Array.isArray(report.sales) ? report.sales : [];
+}
+
+function submittedReportCatalog(report) {
+  return report.catalog?.categories && report.catalog?.products ? report.catalog : data;
+}
+
+function downloadSubmittedReport(report) {
+  const dateKey = report.business_date || report.businessDate;
+  const locationName = submittedReportLocationName(report);
+  const sheet = buildSubmittedReportSheet(submittedReportSales(report), submittedReportCatalog(report), {
+    dateLabel: formatDateKey(dateKey),
+    sheetName: `${locationName} ${formatDateKey(dateKey)}`,
+    cashBalance: report.cash_balance ?? report.cashBalance,
+    locationName
+  });
+  XlsxExport.downloadWorkbook(sheet, `Abrechnung_${locationName}_${dateKey}.xlsx`);
+}
+
+function downloadAllSubmittedReports() {
+  if (!submittedReports.length) {
+    showToast("Noch keine Abrechnungen übermittelt");
+    return;
+  }
+  const ordered = [...submittedReports].sort((a, b) =>
+    String(a.business_date || a.businessDate).localeCompare(String(b.business_date || b.businessDate))
+  );
+  const sheets = ordered.map((report) => {
+    const dateKey = report.business_date || report.businessDate;
+    const locationName = submittedReportLocationName(report);
+    return buildSubmittedReportSheet(submittedReportSales(report), submittedReportCatalog(report), {
+      dateLabel: formatDateKey(dateKey),
+      sheetName: `${locationName} ${dateKey.slice(5)}`,
+      cashBalance: report.cash_balance ?? report.cashBalance,
+      locationName
+    });
+  });
+  const allSales = ordered.flatMap((report) => submittedReportSales(report));
+  const cashValues = ordered
+    .map((report) => Number(report.cash_balance ?? report.cashBalance))
+    .filter(Number.isFinite);
+  const totalCash = cashValues.length ? cashValues.reduce((sum, value) => sum + value, 0) : null;
+  sheets.push(buildSubmittedReportSheet(allSales, data, {
+    dateLabel: "Gesamtabrechnung",
+    sheetName: "Gesamtabrechnung",
+    cashBalance: totalCash,
+    locationName: "Alle Standorte"
+  }));
+  XlsxExport.downloadWorkbook({ sheets }, "Gesamtabrechnung_Übermittelt.xlsx");
+  showToast("Gesamtabrechnung wurde erstellt");
+}
+
+async function refreshSubmittedReports() {
+  if (!isAdminUser()) {
+    submittedReports = [];
+    return;
+  }
+  if (localMode) {
+    submittedReports = readStoredJson("kassenraum-submitted-reports", []);
+    return;
+  }
+  submittedReports = await CloudStore.loadSubmittedReports();
+}
+
+async function submitCurrentReport() {
+  if (isAdminUser()) return;
+  const dateKey = businessDateKey(new Date());
+  const reportSales = salesForBusinessDate(sales, dateKey);
+  if (!reportSales.length) {
+    showToast("Für diesen Geschäftstag sind keine Bons vorhanden");
+    return;
+  }
+  if (!confirm(`Abrechnung für den Geschäftstag ${formatDateKey(dateKey)} an den Admin übermitteln?`)) return;
+
+  const button = $("#submitReportButton");
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Wird übermittelt …";
+  try {
+    const cashBalance = Number.isFinite(Number(cashBalances[dateKey])) ? Number(cashBalances[dateKey]) : null;
+    if (localMode) {
+      const existing = readStoredJson("kassenraum-submitted-reports", []);
+      const locationName = locations.find((location) => location.id === currentLocationId)?.name || "Standort";
+      const report = {
+        id: existing.find((item) => item.locationId === currentLocationId && item.businessDate === dateKey)?.id || uid("report"),
+        locationId: currentLocationId,
+        locationName,
+        businessDate: dateKey,
+        sales: structuredClone(reportSales),
+        catalog: structuredClone(data),
+        cashBalance,
+        submittedAt: new Date().toISOString()
+      };
+      const remaining = existing.filter((item) => !(item.locationId === currentLocationId && item.businessDate === dateKey));
+      localStorage.setItem("kassenraum-submitted-reports", JSON.stringify([report, ...remaining]));
+    } else {
+      await CloudStore.submitReport(currentLocationId, dateKey, reportSales, data, cashBalance);
+    }
+    showToast(`Abrechnung ${formatDateKey(dateKey)} wurde übermittelt`);
+  } catch (error) {
+    showToast(error.message || "Abrechnung konnte nicht übermittelt werden");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+async function deleteSubmittedReport(reportId) {
+  if (!isAdminUser()) return;
+  const report = submittedReports.find((item) => String(item.id) === String(reportId));
+  if (!report || !confirm(`Abrechnung ${formatDateKey(report.business_date || report.businessDate)} von ${submittedReportLocationName(report)} löschen?`)) return;
+  try {
+    if (localMode) {
+      submittedReports = submittedReports.filter((item) => String(item.id) !== String(reportId));
+      localStorage.setItem("kassenraum-submitted-reports", JSON.stringify(submittedReports));
+    } else {
+      await CloudStore.deleteSubmittedReport(reportId);
+      await refreshSubmittedReports();
+    }
+    renderSubmittedReports();
+    showToast("Übermittelte Abrechnung wurde gelöscht");
+  } catch (error) {
+    showToast(error.message || "Abrechnung konnte nicht gelöscht werden");
+  }
+}
+
+function renderSubmittedReports() {
+  const panel = $("#submittedReportsPanel");
+  if (!panel) return;
+  panel.classList.toggle("hidden", !isAdminUser());
+  if (!isAdminUser()) return;
+  const body = $("#submittedReportsBody");
+  body.innerHTML = submittedReports.map((report) => {
+    const reportSales = submittedReportSales(report);
+    const summary = aggregateSales(reportSales);
+    const dateKey = report.business_date || report.businessDate;
+    const submittedAt = report.submitted_at || report.submittedAt;
+    return `<tr>
+      <td><strong>${escapeHtml(formatDateKey(dateKey))}</strong></td>
+      <td>${escapeHtml(submittedReportLocationName(report))}</td>
+      <td>${escapeHtml(formatDateTime(submittedAt))}</td>
+      <td class="number">${reportSales.length}</td>
+      <td class="number">${euro(summary.revenue)}</td>
+      <td class="number"><div class="submitted-report-actions">
+        <button class="secondary-button download-submitted-report" data-id="${escapeHtml(report.id)}">Excel</button>
+        <button class="danger-button delete-submitted-report" data-id="${escapeHtml(report.id)}">Löschen</button>
+      </div></td>
+    </tr>`;
+  }).join("");
+  $("#emptySubmittedReports").classList.toggle("hidden", submittedReports.length > 0);
+  panel.querySelector(".report-table-scroll").classList.toggle("hidden", submittedReports.length === 0);
+  $("#downloadAllSubmittedReportsButton").disabled = submittedReports.length === 0;
+  $$(".download-submitted-report").forEach((button) => button.addEventListener("click", () => {
+    const report = submittedReports.find((item) => String(item.id) === String(button.dataset.id));
+    if (report) downloadSubmittedReport(report);
+  }));
+  $$(".delete-submitted-report").forEach((button) => button.addEventListener("click", () => deleteSubmittedReport(button.dataset.id)));
 }
 
 async function exportReport() {
@@ -2744,6 +2943,11 @@ async function deleteRevenueData() {
   if (!confirm("Backup wurde zum Download angeboten. Umsatzdaten und Kassenstände dieses Standorts jetzt unwiderruflich löschen?")) return;
   try {
     if (!localMode) await CloudStore.deleteSales(currentLocationId);
+    else {
+      submittedReports = readStoredJson("kassenraum-submitted-reports", [])
+        .filter((report) => String(report.locationId) !== String(currentLocationId));
+      localStorage.setItem("kassenraum-submitted-reports", JSON.stringify(submittedReports));
+    }
     sales = [];
     cashBalances = {};
     persistSales();
@@ -2800,6 +3004,11 @@ async function deleteRevenueData() {
   if (!confirm("Umsatzdaten und Kassenstände dieses Standorts jetzt unwiderruflich löschen?")) return;
   try {
     if (!localMode) await CloudStore.deleteSales(currentLocationId);
+    else {
+      submittedReports = readStoredJson("kassenraum-submitted-reports", [])
+        .filter((report) => String(report.locationId) !== String(currentLocationId));
+      localStorage.setItem("kassenraum-submitted-reports", JSON.stringify(submittedReports));
+    }
     sales = [];
     cashBalances = {};
     persistSales();
@@ -2815,7 +3024,6 @@ async function deleteRevenueData() {
 $("#dateChip").textContent = new Intl.DateTimeFormat("de-AT", { weekday: "long", day: "2-digit", month: "long" }).format(new Date());
 $("#settingsButton").addEventListener("click", () => openSettings());
 $("#reportsButton").addEventListener("click", openReports);
-$("#receiptHistoryButton").addEventListener("click", () => openReports({ showReceiptHistory: true }));
 $("#timeClockButton").addEventListener("click", openTimeClock);
 $("#brandHome").addEventListener("click", closeSettings);
 $("#backToPos").addEventListener("click", closeSettings);
@@ -2849,8 +3057,9 @@ $("#receiptLocationFilter").addEventListener("change", async (event) => {
 $("#cashBalanceInput").addEventListener("input", saveCashBalance);
 $("#exportReportButton").addEventListener("click", exportReport);
 $("#emailReportButton").addEventListener("click", emailReport);
+$("#submitReportButton").addEventListener("click", submitCurrentReport);
+$("#downloadAllSubmittedReportsButton").addEventListener("click", downloadAllSubmittedReports);
 $("#syncReceiptsButton").addEventListener("click", syncReceiptsForAdmin);
-$("#deleteFilteredReceiptsButton").addEventListener("click", deleteFilteredReceipts);
 $("#productSearch").addEventListener("input", renderProducts);
 $("#addCategoryButton").addEventListener("click", () => openEditor("category"));
 $("#addProductButton").addEventListener("click", () => openEditor("product"));
