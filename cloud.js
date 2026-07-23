@@ -126,6 +126,12 @@
     return data;
   }
 
+  async function ensureAdminAccess() {
+    const { data, error } = await client.rpc("ensure_admin_access");
+    if (error) throw error;
+    return data;
+  }
+
   async function updateLocation(locationId, name) {
     const { error } = await client.from("locations").update({ name }).eq("id", locationId);
     if (error) throw error;
@@ -406,7 +412,7 @@
   }
 
   global.CloudStore = {
-    configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, loadLocation, loadReportsForLocations,
+    configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, ensureAdminAccess, loadLocation, loadReportsForLocations,
     saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncMasterData, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, deleteCash, deleteSales,
     loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue

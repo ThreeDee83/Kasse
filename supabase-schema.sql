@@ -144,6 +144,15 @@ begin
   where account.id = membership.user_id
     and lower(account.email) in ('ph@standl.at', 'bar@standl.at');
 
+  delete from public.user_locations membership
+  using auth.users account
+  where account.id = membership.user_id
+    and (
+      (lower(account.email) = 'ph@standl.at' and membership.location_id <> punsch_location)
+      or
+      (lower(account.email) = 'bar@standl.at' and membership.location_id <> bar_location)
+    );
+
   insert into public.user_locations(user_id, location_id, role)
   select account.id, location.id, 'admin'
   from auth.users account
@@ -272,6 +281,23 @@ create or replace function public.is_any_admin()
 returns boolean language sql stable security definer set search_path = public
 as $$ select exists(select 1 from user_locations where user_id = auth.uid() and role = 'admin') $$;
 
+create or replace function public.ensure_admin_access()
+returns integer language plpgsql security definer set search_path = public
+as $$
+declare affected_rows integer := 0;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  if lower(coalesce(auth.jwt()->>'email', '')) <> 'admin@standl.at' then
+    raise exception 'Admin role required';
+  end if;
+
+  insert into user_locations (user_id, location_id, role)
+  select auth.uid(), id, 'admin' from locations
+  on conflict (user_id, location_id) do update set role = 'admin';
+  get diagnostics affected_rows = row_count;
+  return affected_rows;
+end $$;
+
 update public.user_locations membership
 set role = 'admin'
 where membership.role <> 'admin'
@@ -294,23 +320,18 @@ begin
     raise exception 'Admin role required';
   end if;
 
-  with shared_members as (
-    select
-      memberships.user_id,
-      case when bool_or(memberships.role = 'admin') then 'admin' else 'staff' end as role
+  with administrators as (
+    select distinct memberships.user_id
     from user_locations memberships
-    group by memberships.user_id
+    where memberships.role = 'admin'
   ),
   synchronized as (
     insert into user_locations (user_id, location_id, role)
-    select shared_members.user_id, locations.id, shared_members.role
-    from shared_members
+    select administrators.user_id, locations.id, 'admin'
+    from administrators
     cross join locations
     on conflict (user_id, location_id) do update
-      set role = case
-        when user_locations.role = 'admin' or excluded.role = 'admin' then 'admin'
-        else 'staff'
-      end
+      set role = 'admin'
     returning 1
   )
   select count(*) into affected_rows from synchronized;
@@ -491,6 +512,7 @@ revoke all on function public.is_location_member(uuid) from public;
 revoke all on function public.is_location_admin(uuid) from public;
 revoke all on function public.is_business_user() from public;
 revoke all on function public.is_any_admin() from public;
+revoke all on function public.ensure_admin_access() from public;
 revoke all on function public.create_location(text) from public;
 revoke all on function public.delete_location(uuid) from public;
 revoke all on function public.sync_location_memberships() from public;
@@ -502,6 +524,7 @@ grant execute on function public.is_location_member(uuid) to authenticated;
 grant execute on function public.is_location_admin(uuid) to authenticated;
 grant execute on function public.is_business_user() to authenticated;
 grant execute on function public.is_any_admin() to authenticated;
+grant execute on function public.ensure_admin_access() to authenticated;
 grant execute on function public.create_location(text) to authenticated;
 grant execute on function public.delete_location(uuid) to authenticated;
 grant execute on function public.sync_location_memberships() to authenticated;

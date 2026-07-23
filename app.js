@@ -375,6 +375,11 @@ async function startCloudSession() {
   if (!session) return false;
   currentUserId = session.user.id;
   currentUserEmail = session.user.email || "";
+  if (currentUserEmail.toLocaleLowerCase("de") === "admin@standl.at") {
+    try {
+      await CloudStore.ensureAdminAccess();
+    } catch (_) {}
+  }
   locations = normalizeLocationList(await CloudStore.locations());
   if (!locations.length) {
     await CloudStore.createLocation("Punschhütte");
