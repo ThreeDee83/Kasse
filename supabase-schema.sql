@@ -130,21 +130,26 @@ begin
   select id, punsch_location, 'staff'
   from auth.users
   where lower(email) = 'ph@standl.at' and punsch_location is not null
-  on conflict (user_id, location_id) do update
-    set role = case when public.user_locations.role = 'admin' then 'admin' else excluded.role end;
+  on conflict (user_id, location_id) do update set role = 'staff';
 
   insert into public.user_locations(user_id, location_id, role)
   select id, bar_location, 'staff'
   from auth.users
   where lower(email) = 'bar@standl.at' and bar_location is not null
-  on conflict (user_id, location_id) do update
-    set role = case when public.user_locations.role = 'admin' then 'admin' else excluded.role end;
+  on conflict (user_id, location_id) do update set role = 'staff';
+
+  update public.user_locations membership
+  set role = 'staff'
+  from auth.users account
+  where account.id = membership.user_id
+    and lower(account.email) in ('ph@standl.at', 'bar@standl.at');
 
   if not exists (
     select 1 from public.user_locations where role = 'admin'
   ) then
     select id into first_user
     from auth.users
+    where lower(coalesce(email, '')) not in ('ph@standl.at', 'bar@standl.at')
     order by created_at, id
     limit 1;
 
