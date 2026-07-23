@@ -144,6 +144,13 @@ begin
   where account.id = membership.user_id
     and lower(account.email) in ('ph@standl.at', 'bar@standl.at');
 
+  insert into public.user_locations(user_id, location_id, role)
+  select account.id, location.id, 'admin'
+  from auth.users account
+  cross join public.locations location
+  where lower(account.email) = 'admin@standl.at'
+  on conflict (user_id, location_id) do update set role = 'admin';
+
   if not exists (
     select 1 from public.user_locations where role = 'admin'
   ) then
