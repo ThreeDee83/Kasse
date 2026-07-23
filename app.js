@@ -128,6 +128,7 @@ function categoryFor(id) {
 
 function isAdminUser() {
   return localMode
+    || currentUserEmail.trim().toLocaleLowerCase("de") === "admin@standl.at"
     || currentRole === "admin"
     || locations.some((location) => String(location.role || "").toLowerCase() === "admin");
 }
