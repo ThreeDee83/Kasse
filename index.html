@@ -376,11 +376,11 @@
         <div id="emptySubmittedReports" class="list-empty hidden">Noch keine Abrechnung übermittelt.</div>
       </section>
 
-      <section class="report-table-card">
-        <div class="report-table-header">
+      <details class="report-table-card collapsible-report-card" open>
+        <summary class="report-table-header">
           <div><h2>Artikelübersicht</h2><p>Jeder Artikel wird einmal zusammengefasst.</p></div>
           <span id="reportResultCount"></span>
-        </div>
+        </summary>
         <div class="report-table-scroll">
           <table class="report-table">
             <thead><tr><th>Artikel</th><th>Kategorie</th><th class="number">Menge</th><th class="number">Umsatz</th></tr></thead>
@@ -388,10 +388,10 @@
           </table>
         </div>
         <div id="emptyReport" class="list-empty hidden">Für diesen Zeitraum wurden noch keine Verkäufe erfasst.</div>
-      </section>
+      </details>
 
-      <section class="report-table-card receipt-history-card">
-        <div class="report-table-header">
+      <details class="report-table-card receipt-history-card collapsible-report-card" open>
+        <summary class="report-table-header">
           <div><h2>Bons</h2><p>Alle Bons des gewählten Abrechnungszeitraums.</p></div>
           <div class="receipt-history-tools">
             <label id="receiptLocationFilterWrap" class="receipt-location-filter hidden" onclick="event.stopPropagation()">
@@ -402,7 +402,7 @@
             </label>
             <span id="receiptHistoryCount"></span>
           </div>
-        </div>
+        </summary>
         <div class="report-table-scroll">
           <table class="report-table receipt-history-table">
             <thead><tr><th>Zeitpunkt</th><th>Standort</th><th>Artikel</th><th class="number">Summe</th></tr></thead>
@@ -410,7 +410,7 @@
           </table>
         </div>
         <div id="emptyReceiptHistory" class="list-empty hidden">Keine Bons im gewählten Zeitraum.</div>
-      </section>
+      </details>
     </main>
   </div>
 

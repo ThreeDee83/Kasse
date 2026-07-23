@@ -1481,7 +1481,7 @@ async function transmitReport({ dateKey, reportType = "daily", automatic = false
 
 function openSubmitReportDialog() {
   if (isAdminUser()) return;
-  $("#submitReportRange").value = "yesterday";
+  $("#submitReportRange").value = "today";
   $("#submitReportDate").value = businessDateKey(new Date());
   $("#submitReportDateWrap").classList.add("hidden");
   $("#submitReportDialog").showModal();

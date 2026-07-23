@@ -267,7 +267,11 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .report-table .zero-price { color: var(--green); }
 .report-table-card > .list-empty { margin: 16px; }
 .receipt-history-card { margin-top: 16px; }
-.receipt-history-card .report-table-header { border-bottom: 1px solid var(--line); }
+.collapsible-report-card > summary { cursor: pointer; list-style: none; }
+.collapsible-report-card > summary::-webkit-details-marker { display: none; }
+.collapsible-report-card > summary::after { content: "▾"; margin-left: 12px; color: var(--muted); transition: transform .18s ease; }
+.collapsible-report-card:not([open]) > summary::after { transform: rotate(-90deg); }
+.collapsible-report-card[open] > summary { border-bottom: 1px solid var(--line); }
 .receipt-history-tools { display: flex; align-items: center; gap: 12px; margin-left: auto; }
 .receipt-location-filter { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
 .receipt-location-filter select { min-width: 160px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); color: var(--ink); font: inherit; text-transform: none; letter-spacing: 0; }
