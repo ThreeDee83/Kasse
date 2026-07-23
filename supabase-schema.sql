@@ -99,6 +99,7 @@ do $$
 declare
   punsch_location uuid;
   bar_location uuid;
+  first_user uuid;
 begin
   insert into public.locations(name)
   select 'Punschhütte'
@@ -138,6 +139,22 @@ begin
   where lower(email) = 'bar@standl.at' and bar_location is not null
   on conflict (user_id, location_id) do update
     set role = case when public.user_locations.role = 'admin' then 'admin' else excluded.role end;
+
+  if not exists (
+    select 1 from public.user_locations where role = 'admin'
+  ) then
+    select id into first_user
+    from auth.users
+    order by created_at, id
+    limit 1;
+
+    if first_user is not null then
+      insert into public.user_locations(user_id, location_id, role)
+      select first_user, id, 'admin'
+      from public.locations
+      on conflict (user_id, location_id) do update set role = 'admin';
+    end if;
+  end if;
 
   delete from public.locations location
   where lower(trim(location.name)) = 'hauptstandort'

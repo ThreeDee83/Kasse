@@ -1,4 +1,4 @@
-const CACHE = "kassenraum-v50";
+const CACHE = "kassenraum-v51";
 const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./xlsx-export.js", "./cloud.js", "./config.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
