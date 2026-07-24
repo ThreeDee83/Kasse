@@ -317,6 +317,7 @@
           </div>
           <div class="report-actions">
             <button id="submitReportButton" class="primary-button staff-only">Abrechnung übermitteln</button>
+            <button id="requestReportButton" class="primary-button admin-only">Abrechnung anfordern</button>
             <button id="syncReceiptsButton" class="secondary-button admin-only">Bons synchronisieren</button>
             <button id="exportReportButton" class="primary-button export-button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
@@ -512,10 +513,13 @@
   <dialog id="submitReportDialog" class="editor-dialog">
     <form id="submitReportForm">
       <div class="dialog-header">
-        <div><p class="eyebrow">ABRECHNUNG</p><h2>Abrechnung übermitteln</h2></div>
+        <div><p class="eyebrow">ABRECHNUNG</p><h2 id="submitReportDialogTitle">Abrechnung übermitteln</h2></div>
         <button type="button" class="dialog-close" id="submitReportDialogClose" aria-label="Schließen">×</button>
       </div>
       <div class="form-fields">
+        <label id="submitReportLocationWrap" class="hidden">Standort
+          <select id="submitReportLocation"></select>
+        </label>
         <label>Zeitraum
           <select id="submitReportRange">
             <option value="yesterday">Gestern</option>
@@ -554,6 +558,6 @@
   <script src="config.js?v=20260722-6"></script>
   <script src="cloud.js?v=20260722-6"></script>
   <script src="xlsx-export.js?v=20260722-6"></script>
-  <script src="app.js?v=20260723-1"></script>
+  <script src="app.js?v=20260724-2"></script>
 </body>
 </html>

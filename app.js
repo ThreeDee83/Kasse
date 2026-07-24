@@ -1426,10 +1426,28 @@ async function refreshSubmittedReports() {
     return;
   }
   if (localMode) {
-    submittedReports = readStoredJson("kassenraum-submitted-reports", []);
+    submittedReports = deduplicateSubmittedReports(readStoredJson("kassenraum-submitted-reports", []));
     return;
   }
-  submittedReports = await CloudStore.loadSubmittedReports();
+  submittedReports = deduplicateSubmittedReports(await CloudStore.loadSubmittedReports());
+}
+
+function deduplicateSubmittedReports(reports) {
+  const unique = new Map();
+  (reports || []).forEach((report) => {
+    const key = [
+      report.location_id || report.locationId,
+      report.business_date || report.businessDate,
+      submittedReportType(report)
+    ].map(String).join("|");
+    const previous = unique.get(key);
+    const submittedAt = report.submitted_at || report.submittedAt || "";
+    const previousAt = previous?.submitted_at || previous?.submittedAt || "";
+    if (!previous || String(submittedAt) > String(previousAt)) unique.set(key, report);
+  });
+  return [...unique.values()].sort((a, b) =>
+    String(b.submitted_at || b.submittedAt || "").localeCompare(String(a.submitted_at || a.submittedAt || ""))
+  );
 }
 
 function previousDateKey(dateKey) {
@@ -1442,54 +1460,80 @@ function submittedReportType(report) {
   return report.report_type || report.reportType || "daily";
 }
 
-async function transmitReport({ dateKey, reportType = "daily", automatic = false }) {
-  if (isAdminUser()) return false;
-  const reportSales = reportType === "total" ? [...sales] : salesForBusinessDate(sales, dateKey);
+async function transmitReport({ dateKey, reportType = "daily", automatic = false, locationId = currentLocationId, silent = false }) {
+  let sourceSales = sales;
+  let sourceCashBalances = cashBalances;
+  let sourceCatalog = data;
+  if (isAdminUser() && String(locationId) !== String(currentLocationId)) {
+    if (localMode) {
+      sourceSales = readStoredJson(scopedKeyFor("kassenraum-sales", locationId), []);
+      sourceCashBalances = readStoredJson(scopedKeyFor("kassenraum-cash-balances", locationId), {});
+      sourceCatalog = readStoredJson(scopedKeyFor("kassenraum-data", locationId), data);
+    } else {
+      const remote = await CloudStore.loadLocation(locationId);
+      sourceSales = remote.sales || [];
+      sourceCashBalances = remote.cashBalances || {};
+      sourceCatalog = remote.state?.data || data;
+    }
+  }
+  const reportSales = reportType === "total" ? [...sourceSales] : salesForBusinessDate(sourceSales, dateKey);
   if (!reportSales.length) {
-    if (!automatic) showToast("Für diesen Zeitraum sind keine Bons vorhanden");
+    if (!automatic && !silent) showToast("Für diesen Zeitraum sind keine Bons vorhanden");
     return false;
   }
   const cashBalance = reportType === "total"
-    ? Object.values(cashBalances).map(Number).filter(Number.isFinite).reduce((sum, value) => sum + value, 0)
-    : (Number.isFinite(Number(cashBalances[dateKey])) ? Number(cashBalances[dateKey]) : null);
+    ? Object.values(sourceCashBalances).map(Number).filter(Number.isFinite).reduce((sum, value) => sum + value, 0)
+    : (Number.isFinite(Number(sourceCashBalances[dateKey])) ? Number(sourceCashBalances[dateKey]) : null);
 
   if (localMode) {
     const existing = readStoredJson("kassenraum-submitted-reports", []);
-    const locationName = locations.find((location) => location.id === currentLocationId)?.name || "Standort";
+    const locationName = locations.find((location) => String(location.id) === String(locationId))?.name || "Standort";
     const match = existing.find((item) =>
-      String(item.locationId) === String(currentLocationId)
+      String(item.locationId || item.location_id) === String(locationId)
       && (item.businessDate || item.business_date) === dateKey
       && submittedReportType(item) === reportType
     );
     const report = {
       id: match?.id || uid("report"),
-      locationId: currentLocationId,
+      locationId,
       locationName,
       businessDate: dateKey,
       reportType,
       sales: structuredClone(reportSales),
-      catalog: structuredClone(data),
+      catalog: structuredClone(sourceCatalog),
       cashBalance,
       submittedAt: new Date().toISOString()
     };
     const remaining = existing.filter((item) => String(item.id) !== String(report.id));
     localStorage.setItem("kassenraum-submitted-reports", JSON.stringify([report, ...remaining]));
   } else {
-    await CloudStore.submitReport(currentLocationId, dateKey, reportSales, data, cashBalance, reportType);
+    await CloudStore.submitReport(locationId, dateKey, reportSales, sourceCatalog, cashBalance, reportType);
   }
-  if (!automatic) {
+  if (!automatic && !silent) {
+    const action = isAdminUser() ? "angefordert und aktualisiert" : "übermittelt";
     showToast(reportType === "total"
-      ? "Gesamtabrechnung wurde übermittelt"
-      : `Abrechnung ${formatDateKey(dateKey)} wurde übermittelt`);
+      ? `Gesamtabrechnung wurde ${action}`
+      : `Abrechnung ${formatDateKey(dateKey)} wurde ${action}`);
   }
   return true;
 }
 
 function openSubmitReportDialog() {
-  if (isAdminUser()) return;
+  const admin = isAdminUser();
   $("#submitReportRange").value = "today";
   $("#submitReportDate").value = businessDateKey(new Date());
   $("#submitReportDateWrap").classList.add("hidden");
+  $("#submitReportDialogTitle").textContent = admin ? "Abrechnung anfordern" : "Abrechnung übermitteln";
+  $("#submitReportConfirm").textContent = admin ? "Anfordern" : "Übermitteln";
+  const locationWrap = $("#submitReportLocationWrap");
+  locationWrap.classList.toggle("hidden", !admin);
+  if (admin) {
+    const locationSelect = $("#submitReportLocation");
+    locationSelect.innerHTML = `<option value="all">Alle Standorte</option>${locations.map((location) =>
+      `<option value="${escapeHtml(location.id)}">${escapeHtml(location.name)}</option>`
+    ).join("")}`;
+    locationSelect.value = "all";
+  }
   $("#submitReportDialog").showModal();
 }
 
@@ -1507,10 +1551,36 @@ async function submitSelectedReport(event) {
   const button = $("#submitReportConfirm");
   const originalText = button.textContent;
   button.disabled = true;
-  button.textContent = "Wird übermittelt …";
+  button.textContent = isAdminUser() ? "Wird angefordert …" : "Wird übermittelt …";
   try {
-    const sent = await transmitReport({ dateKey, reportType: range === "all" ? "total" : "daily" });
-    if (sent) $("#submitReportDialog").close();
+    const admin = isAdminUser();
+    const selectedLocationId = admin ? $("#submitReportLocation").value : currentLocationId;
+    const targetLocationIds = admin && selectedLocationId === "all"
+      ? locations.map((location) => location.id)
+      : [selectedLocationId];
+    let sentCount = 0;
+    for (const locationId of targetLocationIds) {
+      const sentForLocation = await transmitReport({
+        dateKey,
+        reportType: range === "all" ? "total" : "daily",
+        locationId,
+        silent: admin
+      });
+      if (sentForLocation) sentCount += 1;
+    }
+    const sent = sentCount > 0;
+    if (sent) {
+      $("#submitReportDialog").close();
+      if (admin) {
+        await refreshSubmittedReports();
+        renderSubmittedReports();
+        showToast(sentCount === 1
+          ? "Eine vorhandene Abrechnung wurde aktualisiert"
+          : `${sentCount} vorhandene Abrechnungen wurden aktualisiert`);
+      }
+    } else if (admin) {
+      showToast("Für diesen Zeitraum ist an keinem ausgewählten Standort eine Abrechnung vorhanden");
+    }
   } catch (error) {
     showToast(error.message || "Abrechnung konnte nicht übermittelt werden");
   } finally {
@@ -3143,6 +3213,7 @@ $("#receiptLocationFilter").addEventListener("change", async (event) => {
 $("#cashBalanceInput").addEventListener("input", saveCashBalance);
 $("#exportReportButton").addEventListener("click", exportReport);
 $("#submitReportButton").addEventListener("click", openSubmitReportDialog);
+$("#requestReportButton").addEventListener("click", openSubmitReportDialog);
 $("#submitReportForm").addEventListener("submit", submitSelectedReport);
 $("#submitReportRange").addEventListener("change", (event) => {
   $("#submitReportDateWrap").classList.toggle("hidden", event.target.value !== "date");
