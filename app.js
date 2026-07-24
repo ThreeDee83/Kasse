@@ -1464,11 +1464,17 @@ async function transmitReport({ dateKey, reportType = "daily", automatic = false
   let sourceSales = sales;
   let sourceCashBalances = cashBalances;
   let sourceCatalog = data;
-  if (isAdminUser() && String(locationId) !== String(currentLocationId)) {
+  if (isAdminUser()) {
     if (localMode) {
-      sourceSales = readStoredJson(scopedKeyFor("kassenraum-sales", locationId), []);
-      sourceCashBalances = readStoredJson(scopedKeyFor("kassenraum-cash-balances", locationId), {});
-      sourceCatalog = readStoredJson(scopedKeyFor("kassenraum-data", locationId), data);
+      if (String(locationId) === String(currentLocationId)) {
+        sourceSales = sales;
+        sourceCashBalances = cashBalances;
+        sourceCatalog = data;
+      } else {
+        sourceSales = readStoredJson(scopedKeyFor("kassenraum-sales", locationId), []);
+        sourceCashBalances = readStoredJson(scopedKeyFor("kassenraum-cash-balances", locationId), {});
+        sourceCatalog = readStoredJson(scopedKeyFor("kassenraum-data", locationId), data);
+      }
     } else {
       const remote = await CloudStore.loadLocation(locationId);
       sourceSales = remote.sales || [];
