@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260723-2">
+  <link rel="stylesheet" href="styles.css?v=20260724-1">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -108,6 +108,10 @@
           <small>Tippe auf einen Artikel, um ihn hinzuzufügen.</small>
         </div>
         <div class="cart-footer">
+          <button id="mobileCartToggle" class="mobile-cart-toggle staff-only" type="button" aria-expanded="false">
+            <span><strong id="mobileCartCount">0 Artikel</strong><small>Bon anzeigen</small></span>
+            <span id="mobileCartToggleTotal">0,00 €</span>
+          </button>
           <div class="summary-row muted"><span>Zwischensumme</span><span id="subtotal">0,00 €</span></div>
           <div class="summary-row total"><span>Gesamt</span><span id="total">0,00 €</span></div>
           <button id="checkoutButton" class="checkout-button" disabled>
@@ -558,6 +562,6 @@
   <script src="config.js?v=20260722-6"></script>
   <script src="cloud.js?v=20260722-6"></script>
   <script src="xlsx-export.js?v=20260722-6"></script>
-  <script src="app.js?v=20260724-3"></script>
+  <script src="app.js?v=20260724-4"></script>
 </body>
 </html>

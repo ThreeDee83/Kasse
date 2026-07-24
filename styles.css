@@ -372,6 +372,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .time-table .secondary-button { padding: 5px 8px; font-size: 10px; }
 .time-row-actions { display: flex; gap: 6px; }
 .time-open { color: var(--green); font-weight: 700; }
+.mobile-cart-toggle { display: none; }
 
 @media (min-width: 761px) and (max-width: 1100px) {
   .pos-layout {
@@ -476,6 +477,175 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .time-entry-date-row { grid-template-columns: minmax(0, 1fr) minmax(0, .8fr); gap: 9px; }
   .time-form-grid button, .time-inline-form button { width: 100%; }
   .report-table th, .report-table td { padding: 12px 14px; }
+}
+
+/* Kompakte Staff-Kasse für Smartphones und Geräte unter etwa 7 Zoll. */
+@media (max-width: 600px), (max-height: 520px) and (max-width: 900px) {
+  body.staff-mode {
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body.staff-mode .topbar {
+    height: 56px;
+    min-height: 56px;
+    padding: 0 max(8px, env(safe-area-inset-left));
+  }
+  body.staff-mode .brand > span:last-child,
+  body.staff-mode .date-chip { display: none; }
+  body.staff-mode .brand-mark { width: 36px; height: 36px; }
+  body.staff-mode .topbar-actions { gap: 4px; }
+  body.staff-mode .location-picker select {
+    min-height: 42px;
+    max-width: 92px;
+    padding: 7px 5px;
+    font-size: 13px;
+  }
+  body.staff-mode .report-button,
+  body.staff-mode .icon-button {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+  }
+  body.staff-mode .report-button svg,
+  body.staff-mode .icon-button svg { width: 19px; }
+  body.staff-mode .active-employees-bar {
+    min-height: 38px;
+    padding: 4px 10px;
+    overflow-x: auto;
+  }
+  body.staff-mode .active-employee-chip {
+    min-height: 30px;
+    padding: 6px 9px;
+    white-space: nowrap;
+  }
+  body.staff-mode .active-employees-bar:not(.hidden) + .pos-layout,
+  body.staff-mode .pos-layout {
+    min-height: calc(100dvh - 56px);
+    padding-bottom: calc(142px + env(safe-area-inset-bottom));
+  }
+  body.staff-mode .pos-layout.cart-expanded { padding-bottom: calc(142px + env(safe-area-inset-bottom)); }
+  body.staff-mode .category-panel {
+    top: 0;
+    padding: 7px 9px;
+    scrollbar-width: none;
+  }
+  body.staff-mode .category-panel::-webkit-scrollbar { display: none; }
+  body.staff-mode .category-nav { gap: 6px; }
+  body.staff-mode .category-button {
+    min-height: 42px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  body.staff-mode .category-dot { width: 10px; height: 10px; }
+  body.staff-mode .product-section { padding: 13px 10px 20px; }
+  body.staff-mode .product-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  body.staff-mode .product-header .eyebrow { display: none; }
+  body.staff-mode .product-header h1 {
+    overflow: hidden;
+    font-size: 20px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  body.staff-mode .search-box {
+    width: 44px;
+    min-height: 44px;
+    margin: 0;
+    padding: 11px;
+    overflow: hidden;
+  }
+  body.staff-mode .search-box:focus-within {
+    position: absolute;
+    z-index: 6;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+  body.staff-mode .search-box input { min-width: 180px; font-size: 16px; }
+  body.staff-mode .product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  body.staff-mode .product-card {
+    min-height: 100px;
+    padding: 11px;
+    border-width: 2px;
+    border-radius: 12px;
+  }
+  body.staff-mode .product-card strong {
+    margin-top: 5px;
+    font-size: 15px;
+    line-height: 1.15;
+  }
+  body.staff-mode .product-category { font-size: 9px; }
+  body.staff-mode .product-price { margin-top: 6px; font-size: 14px; }
+  body.staff-mode .product-add { right: 8px; bottom: 8px; width: 28px; height: 28px; }
+  body.staff-mode .cart-panel,
+  body.staff-mode .cart-panel.has-items {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  body.staff-mode .cart-panel .cart-header,
+  body.staff-mode .cart-panel .cart-items { display: none; }
+  body.staff-mode .cart-footer { padding: 8px 10px 10px; }
+  body.staff-mode .mobile-cart-toggle {
+    width: 100%;
+    min-height: 42px;
+    margin-bottom: 7px;
+    padding: 7px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 0;
+    border-radius: 9px;
+    background: rgba(255,255,255,.07);
+    color: var(--ink);
+    text-align: left;
+  }
+  body.staff-mode .mobile-cart-toggle > span:first-child { display: grid; gap: 1px; }
+  body.staff-mode .mobile-cart-toggle strong { font-size: 13px; }
+  body.staff-mode .mobile-cart-toggle small { color: var(--muted); font-size: 10px; }
+  body.staff-mode .mobile-cart-toggle > span:last-child { font-weight: 800; }
+  body.staff-mode .summary-row.muted { display: none; }
+  body.staff-mode .summary-row.total { margin-bottom: 7px; font-size: 16px; }
+  body.staff-mode .checkout-button { min-height: 48px; padding: 12px 16px; }
+  body.staff-mode .pos-layout.mobile-cart-open .cart-panel {
+    height: min(68dvh, 470px);
+    display: flex;
+  }
+  body.staff-mode .pos-layout.mobile-cart-open .cart-header {
+    padding: 11px 13px 8px;
+    display: flex;
+  }
+  body.staff-mode .pos-layout.mobile-cart-open .cart-header h2 { font-size: 18px; }
+  body.staff-mode .pos-layout.mobile-cart-open .cart-header .eyebrow { display: none; }
+  body.staff-mode .pos-layout.mobile-cart-open .cart-items {
+    padding: 2px 10px;
+    display: block;
+  }
+  body.staff-mode .pos-layout.mobile-cart-open .cart-item { padding: 9px 3px; }
+  body.staff-mode .pos-layout.mobile-cart-open .quantity-control button {
+    width: 40px;
+    height: 40px;
+  }
+  body.staff-mode .checkout-dialog {
+    width: 100%;
+    max-width: none;
+    margin: auto 0 0;
+    padding: 20px 16px max(18px, env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
+  }
 }
 
 /* Touch-optimierte Ansicht für 11–13,3-Zoll-Tablets im Querformat. */

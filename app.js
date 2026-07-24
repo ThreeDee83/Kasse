@@ -212,6 +212,8 @@ function renderAll() {
 
 function renderRoleAccess() {
   const isAdmin = isAdminUser();
+  document.body.classList.toggle("staff-mode", !isAdmin);
+  document.body.classList.toggle("admin-mode", isAdmin);
   $("#settingsButton").classList.toggle("hidden", !isAdmin);
   $$(".open-settings").forEach((button) => button.classList.toggle("hidden", !isAdmin));
   $$(".admin-only").forEach((element) => element.classList.toggle("hidden", !isAdmin));
@@ -547,6 +549,14 @@ function renderCart() {
   $("#emptyCart").classList.toggle("hidden", hasItems);
   $("#clearCartButton").disabled = !hasItems;
   $("#checkoutButton").disabled = !hasItems;
+  const itemCount = cart.reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
+  $("#mobileCartCount").textContent = `${itemCount} ${itemCount === 1 ? "Artikel" : "Artikel"}`;
+  $("#mobileCartToggleTotal").textContent = euro(cartTotal());
+  $("#mobileCartToggle").disabled = !hasItems;
+  if (!hasItems) $("#posView").classList.remove("mobile-cart-open");
+  const mobileCartOpen = $("#posView").classList.contains("mobile-cart-open");
+  $("#mobileCartToggle").setAttribute("aria-expanded", String(mobileCartOpen));
+  $("#mobileCartToggle").querySelector("small").textContent = mobileCartOpen ? "Bon schließen" : "Bon anzeigen";
   $("#cartItems").innerHTML = cart.map((entry) => {
     const product = data.products.find((item) => item.id === entry.productId);
     return `<div class="cart-item">
@@ -3346,6 +3356,11 @@ $("#timeEntryDialogCancel").addEventListener("click", () => $("#timeEntryDialog"
 $("#receiptDialogClose").addEventListener("click", () => $("#receiptDialog").close());
 $("#receiptDialogOk").addEventListener("click", () => $("#receiptDialog").close());
 $("#clearCartButton").addEventListener("click", () => { cart = []; renderCart(); });
+$("#mobileCartToggle").addEventListener("click", () => {
+  const open = $("#posView").classList.toggle("mobile-cart-open");
+  $("#mobileCartToggle").setAttribute("aria-expanded", String(open));
+  $("#mobileCartToggle").querySelector("small").textContent = open ? "Bon schließen" : "Bon anzeigen";
+});
 $("#checkoutButton").addEventListener("click", openPaymentDialog);
 $("#paymentAmountInput").addEventListener("input", updatePaymentChange);
 $("#exactPaymentButton").addEventListener("click", () => {
