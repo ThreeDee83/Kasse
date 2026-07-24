@@ -246,6 +246,7 @@ function renderLocationSelector() {
 function showApplication() {
   $("#loginScreen").classList.add("hidden");
   $("#appShell").classList.remove("hidden");
+  $("#posView").classList.remove("tablet-cart-hidden");
   renderAll();
 }
 
@@ -552,6 +553,7 @@ function renderCart() {
   const itemCount = cart.reduce((sum, entry) => sum + Number(entry.quantity || 0), 0);
   $("#mobileCartCount").textContent = `${itemCount} ${itemCount === 1 ? "Artikel" : "Artikel"}`;
   $("#mobileCartToggleTotal").textContent = euro(cartTotal());
+  $("#tabletCartShowTotal").textContent = euro(cartTotal());
   $("#mobileCartToggle").disabled = !hasItems;
   if (!hasItems) $("#posView").classList.remove("mobile-cart-open");
   const mobileCartOpen = $("#posView").classList.contains("mobile-cart-open");
@@ -3360,6 +3362,14 @@ $("#mobileCartToggle").addEventListener("click", () => {
   const open = $("#posView").classList.toggle("mobile-cart-open");
   $("#mobileCartToggle").setAttribute("aria-expanded", String(open));
   $("#mobileCartToggle").querySelector("small").textContent = open ? "Bon schließen" : "Bon anzeigen";
+});
+$("#tabletCartHideButton").addEventListener("click", () => {
+  $("#posView").classList.add("tablet-cart-hidden");
+  $("#tabletCartShowButton").focus();
+});
+$("#tabletCartShowButton").addEventListener("click", () => {
+  $("#posView").classList.remove("tablet-cart-hidden");
+  $("#tabletCartHideButton").focus();
 });
 $("#checkoutButton").addEventListener("click", openPaymentDialog);
 $("#paymentAmountInput").addEventListener("input", updatePaymentChange);
