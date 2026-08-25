@@ -7,6 +7,7 @@
     "build:web-vendor": "node scripts/build-web-vendor.mjs",
     "build:android-web": "npm run build:web-vendor && node scripts/build-android-web.mjs",
     "test:offline": "node scripts/test-offline-cloud.mjs && node scripts/test-offline-assets.mjs",
+    "test:kds": "node scripts/test-kds-order.mjs",
     "android:sync": "npm run build:android-web && cap sync android",
     "android:open": "npm run android:sync && cap open android",
     "android:debug": "npm run android:sync && cd android && gradlew.bat assembleDebug",

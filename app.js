@@ -50,6 +50,7 @@ let reportFilter = "today";
 let receiptLocationFilter = "all";
 let pendingPaymentTotal = 0;
 let paymentReturnCategory = null;
+let paymentWithoutPager = false;
 let combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
 let reportLocationScope = [];
 let toastTimer;
@@ -253,12 +254,50 @@ async function startOfflineSession(session = null) {
 function renderAll() {
   applyTheme();
   renderRoleAccess();
+  renderKdsToggle();
   renderLocationSelector();
   renderActiveEmployees();
   renderCategories();
   renderProducts();
   renderCart();
   renderSettings();
+}
+
+function kdsEnabledStorageKey() {
+  return `owncash-kds-enabled:${currentLocationId || "local"}`;
+}
+
+function isKdsEnabled() {
+  const location = locations.find((entry) => entry.id === currentLocationId);
+  const sharedValue = location?.kdsEnabled ?? location?.kds_enabled;
+  if (typeof sharedValue === "boolean") return sharedValue;
+  return localStorage.getItem(kdsEnabledStorageKey()) !== "false";
+}
+
+function renderKdsToggle() {
+  const button = $("#kdsToggleButton");
+  if (!button) return;
+  const enabled = isKdsEnabled();
+  button.classList.toggle("active", enabled);
+  button.setAttribute("aria-pressed", String(enabled));
+  button.title = enabled ? "KDS für diesen Standort ausschalten" : "KDS für diesen Standort einschalten";
+  $("#kdsToggleLabel").textContent = enabled ? "KDS EIN" : "KDS AUS";
+}
+
+async function toggleKds() {
+  const enabled = !isKdsEnabled();
+  const location = locations.find((entry) => entry.id === currentLocationId);
+  if (location) {
+    location.kds_enabled = enabled;
+    location.kdsEnabled = enabled;
+  }
+  localStorage.setItem(kdsEnabledStorageKey(), String(enabled));
+  renderKdsToggle();
+  const result = !localMode && currentLocationId !== "local"
+    ? await CloudStore.setKdsEnabled(currentLocationId, enabled)
+    : { local: true };
+  const queuedText = result?.queued ? " – Synchronisierung vorgemerkt" : "";
+  showToast(`${enabled ? "KDS eingeschaltet" : "KDS ausgeschaltet – keine Pagerabfrage"}${queuedText}`);
 }
 
 function renderRoleAccess() {
@@ -1285,13 +1324,35 @@ function recordCurrentSale() {
       price: product.price,
       categoryId: product.categoryId,
       categoryName: category?.name || "Ohne Kategorie",
+      isKdsFood: globalThis.KdsOrder?.isFoodProduct(product, data.products, data.categories) === true,
       quantity: entry.quantity
     };
   });
   const sale = { id: uid("sale"), timestamp: new Date().toISOString(), total: cartTotal(), items };
   sales.push(sale);
   persistSales();
-  if (!localMode && currentLocationId !== "local") CloudStore.insertSale(currentLocationId, sale);
+  const syncPromise = !localMode && currentLocationId !== "local"
+    ? CloudStore.insertSale(currentLocationId, sale)
+    : Promise.resolve({ local: true });
+  return { sale, syncPromise };
+}
+
+function currentCartFoodItems() {
+  return globalThis.KdsOrder?.foodItemsFromCart(cart, data.products, data.categories) || [];
+}
+
+function setPaymentWithoutPager(withoutPager) {
+  paymentWithoutPager = Boolean(withoutPager);
+  const wrap = $("#paymentPagerWrap");
+  const input = $("#paymentPagerInput");
+  const button = $("#noPagerButton");
+  wrap.classList.toggle("without-pager", paymentWithoutPager);
+  input.disabled = paymentWithoutPager;
+  input.required = !paymentWithoutPager && !wrap.classList.contains("hidden");
+  if (paymentWithoutPager) input.value = "";
+  button.classList.toggle("active", paymentWithoutPager);
+  button.setAttribute("aria-pressed", String(paymentWithoutPager));
+  button.textContent = paymentWithoutPager ? "Pager verwenden" : "Kein Pager";
 }
 
 function updatePaymentChange() {
@@ -1315,22 +1376,63 @@ function openPaymentDialog() {
   $("#paymentSuccess").classList.add("hidden");
   $("#paymentTotal").textContent = euro(pendingPaymentTotal);
   $("#paymentAmountInput").value = "";
+  const needsKdsChoice = isKdsEnabled() && currentCartFoodItems().length > 0;
+  $("#paymentPagerWrap").classList.toggle("hidden", !needsKdsChoice);
+  $("#paymentPagerInput").value = "";
+  setPaymentWithoutPager(false);
+  $("#paymentPagerInput").required = needsKdsChoice;
   updatePaymentChange();
   $("#checkoutDialog").showModal();
   $("#paymentAmountInput").focus();
 }
 
-function completePayment(event) {
+async function completePayment(event) {
   event.preventDefault();
   const givenAmount = Number($("#paymentAmountInput").value);
   const changeAmount = givenAmount - pendingPaymentTotal;
   if (!Number.isFinite(givenAmount) || changeAmount < -0.005) return;
-  recordCurrentSale();
-  cart = [];
-  renderCart();
-  $("#checkoutMessage").textContent = `Gesamt: ${euro(pendingPaymentTotal)} · Gegeben: ${euro(givenAmount)} · Rückgeld: ${euro(Math.max(0, changeAmount))}`;
-  $("#paymentStep").classList.add("hidden");
-  $("#paymentSuccess").classList.remove("hidden");
+  const foodItems = currentCartFoodItems();
+  const shouldSendToKds = isKdsEnabled() && foodItems.length > 0;
+  const pagerInput = $("#paymentPagerInput");
+  const pagerNumber = shouldSendToKds && !paymentWithoutPager
+    ? globalThis.KdsOrder?.normalizePagerNumber(pagerInput.value)
+    : null;
+  if (shouldSendToKds && !paymentWithoutPager && !pagerNumber) {
+    pagerInput.setCustomValidity("Bitte eine Pager-Nummer mit maximal sechs Ziffern eingeben.");
+    pagerInput.reportValidity();
+    pagerInput.setCustomValidity("");
+    return pagerInput.focus();
+  }
+  const button = $("#confirmPaymentButton");
+  button.disabled = true;
+  try {
+    const { sale, syncPromise } = recordCurrentSale();
+    let kdsQueued = false;
+    if (shouldSendToKds && !localMode && currentLocationId !== "local") {
+      await syncPromise;
+      const result = await CloudStore.createKdsOrder({
+        saleId: sale.id,
+        locationId: currentLocationId,
+        pagerNumber,
+        items: globalThis.KdsOrder.foodItemsFromSale(sale, data.products, data.categories),
+        receivedAt: sale.timestamp
+      });
+      kdsQueued = result?.queued === true;
+    }
+    cart = [];
+    renderCart();
+    const pagerText = shouldSendToKds
+      ? ` · ${pagerNumber ? `Pager: ${pagerNumber}` : "Kein Pager"}${localMode ? " (KDS im lokalen Testmodus nicht verfügbar)" : (kdsQueued ? " (Synchronisierung vorgemerkt)" : "")}`
+      : "";
+    $("#checkoutMessage").textContent = `Gesamt: ${euro(pendingPaymentTotal)} · Gegeben: ${euro(givenAmount)} · Rückgeld: ${euro(Math.max(0, changeAmount))}${pagerText}`;
+    $("#paymentStep").classList.add("hidden");
+    $("#paymentSuccess").classList.remove("hidden");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Bestellung konnte nicht abgeschlossen werden");
+  } finally {
+    if (!$("#paymentStep").classList.contains("hidden")) updatePaymentChange();
+  }
 }
 
 function buildExportPayload() {
@@ -3020,6 +3122,9 @@ function renderSettings() {
   $("#billingEmailInput").value = appSettings.billingEmail || "";
   $("#billingEmail2Input").value = appSettings.billingEmail2 || "";
   $("#currentUserLabel").textContent = localMode ? "Lokaler Testmodus" : (currentUserEmail || "Supabase-Konto aktiv");
+  const kdsUrl = new URL("kds/", document.baseURI).href;
+  $("#kdsOpenLink").href = kdsUrl;
+  $("#kdsUrlLabel").textContent = kdsUrl;
   renderLocationAdministration();
   renderEmployeeAdministration();
 }
@@ -3778,6 +3883,7 @@ $("#productSearch").addEventListener("input", renderProducts);
 $("#addCategoryButton").addEventListener("click", () => openEditor("category"));
 $("#addProductButton").addEventListener("click", () => openEditor("product"));
 $("#locationSelector").addEventListener("change", (event) => switchLocation(event.target.value));
+$("#kdsToggleButton").addEventListener("click", () => toggleKds().catch((error) => showToast(error.message || "KDS-Status konnte nicht geändert werden")));
 $("#themeSelect").addEventListener("change", (event) => {
   appSettings.theme = event.target.value;
   persist();
@@ -3879,6 +3985,15 @@ $("#excelImportInput").addEventListener("change", async (event) => {
 });
 $("#adminExcelExportButton").addEventListener("click", exportAdminExcel);
 $("#syncMasterDataButton").addEventListener("click", syncMasterDataToUsers);
+$("#copyKdsLinkButton").addEventListener("click", async () => {
+  const url = new URL("kds/", document.baseURI).href;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("KDS-Link kopiert");
+  } catch (_) {
+    window.prompt("KDS-Link kopieren:", url);
+  }
+});
 $("#deleteSalesButton").addEventListener("click", deleteRevenueData);
 $("#resetTimeTrackingButton").addEventListener("click", resetTimeTrackingData);
 $("#logoutButton").addEventListener("click", logout);
@@ -3907,6 +4022,10 @@ $("#tabletCartShowButton").addEventListener("click", () => {
 });
 $("#checkoutButton").addEventListener("click", openPaymentDialog);
 $("#paymentAmountInput").addEventListener("input", updatePaymentChange);
+$("#noPagerButton").addEventListener("click", () => {
+  setPaymentWithoutPager(!paymentWithoutPager);
+  if (!paymentWithoutPager) $("#paymentPagerInput").focus();
+});
 $("#exactPaymentButton").addEventListener("click", () => {
   $("#paymentAmountInput").value = pendingPaymentTotal.toFixed(2);
   updatePaymentChange();

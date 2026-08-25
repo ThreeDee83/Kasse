@@ -71,6 +71,10 @@ body[data-theme="light"] .cart-footer { background: #fbfaf6; }
 .brand strong { display: block; font: 800 16px/1.15 Manrope; letter-spacing: -.3px; }
 .brand small { color: var(--muted); font-size: 11px; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
+.kds-toggle { min-height: 41px; padding: 0 12px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 12px; background: var(--white); color: var(--muted); font-size: 11px; font-weight: 850; white-space: nowrap; cursor: pointer; }
+.kds-toggle-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent); }
+.kds-toggle.active { border-color: color-mix(in srgb, var(--green) 48%, var(--line)); color: var(--green); background: color-mix(in srgb, var(--green) 9%, var(--white)); }
+.kds-toggle.active .kds-toggle-dot { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 16%, transparent); }
 .location-picker { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .location-picker select { max-width: 165px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--white); color: var(--ink); }
 .date-chip { color: var(--muted); font-size: 13px; }
@@ -175,6 +179,7 @@ h2 { margin: 0; font-size: 21px; }
 .empty-state p { color: var(--muted); }
 .empty-icon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: var(--panel-soft); color: var(--green); font-size: 27px; }
 .primary-button, .secondary-button { padding: 11px 16px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+.secondary-button:is(a) { display: inline-flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; }
 .primary-button { border: 1px solid var(--green); background: var(--green); color: #07130f; }
 .primary-button:hover { background: var(--green-2); }
 .secondary-button { border: 1px solid var(--line); background: var(--panel-soft); }
@@ -236,6 +241,14 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .payment-entry { display: block; margin-top: 19px; color: var(--muted); font-size: 12px; font-weight: 700; text-align: left; }
 .payment-entry input { width: 100%; margin-top: 7px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; outline: 0; background: var(--panel-soft); color: var(--ink); font: 700 19px/1 Manrope; text-align: right; }
 .payment-entry input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(61,212,163,.1); }
+.payment-pager { padding-top: 15px; border-top: 1px solid var(--line); }
+.payment-pager input { text-align: center; letter-spacing: .08em; }
+.payment-pager-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 8px; margin-top: 7px; }
+.payment-pager-entry input { margin-top: 0; }
+.no-pager-button { min-width: 112px; }
+.no-pager-button.active { border-color: var(--green); background: color-mix(in srgb, var(--green) 13%, var(--white)); color: var(--green); }
+.payment-pager.without-pager input { opacity: .42; }
+.payment-pager small { display: block; margin-top: 7px; color: var(--muted); font-weight: 500; line-height: 1.4; }
 .payment-exact { display: block; margin: 9px 0 0 auto; }
 .payment-change.positive strong { color: var(--green); }
 .payment-change.negative strong { color: var(--danger); }
@@ -339,6 +352,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .checkbox-grid label { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--ink); font-size: 13px; }
 .checkbox-grid input { width: auto; margin: 0; accent-color: var(--green); }
 .admin-button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.kds-admin-link code { display: block; padding: 11px 12px; overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); color: var(--green); font-size: 11px; }
 .settings-hint { margin-top: 12px; }
 .file-button { display: inline-flex; padding: 10px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); cursor: pointer; color: var(--ink) !important; }
 .file-button input { display: none; }
@@ -502,6 +516,9 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .brand > span:last-child { display: none; }
   .location-picker select { max-width: 60px; padding-left: 6px; padding-right: 6px; }
   .topbar { padding: 0 8px; }
+  .kds-toggle { min-width: 42px; padding-inline: 8px; }
+  .kds-toggle #kdsToggleLabel { font-size: 0; }
+  .kds-toggle #kdsToggleLabel::after { content: "KDS"; font-size: 10px; }
   .reports-heading { display: block; }
   .reports-heading .export-button { width: 100%; justify-content: center; margin-top: 18px; }
   .report-actions { display: grid; grid-template-columns: 1fr; margin-top: 18px; }

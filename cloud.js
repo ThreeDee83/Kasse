@@ -19,6 +19,18 @@
       );
       if (existingIndex >= 0) queue[existingIndex] = queuedAction;
       else queue.push(queuedAction);
+    } else if (action.type === "kdsOrder" && action.order?.saleId) {
+      const existingIndex = queue.findIndex((entry) =>
+        entry.type === "kdsOrder" && entry.order?.saleId === action.order.saleId
+      );
+      if (existingIndex >= 0) queue[existingIndex] = queuedAction;
+      else queue.push(queuedAction);
+    } else if (action.type === "kdsSetting" && action.locationId) {
+      const existingIndex = queue.findIndex((entry) =>
+        entry.type === "kdsSetting" && entry.locationId === action.locationId
+      );
+      if (existingIndex >= 0) queue[existingIndex] = queuedAction;
+      else queue.push(queuedAction);
     } else {
       queue.push(queuedAction);
     }
@@ -63,6 +75,22 @@
         entry_clock_in: entry.clockIn,
         entry_clock_out: entry.clockOut || null,
         entry_note: entry.note || ""
+      });
+    }
+    if (action.type === "kdsOrder") {
+      const order = action.order || {};
+      return client.from("kds_orders").upsert({
+        sale_id: order.saleId,
+        location_id: order.locationId,
+        pager_number: order.pagerNumber || null,
+        items: order.items || [],
+        received_at: order.receivedAt
+      }, { onConflict: "sale_id" });
+    }
+    if (action.type === "kdsSetting") {
+      return client.rpc("set_kds_enabled", {
+        target_location: action.locationId,
+        enabled: action.enabled !== false
       });
     }
   }
@@ -123,7 +151,7 @@
   async function locations() {
     const { data, error } = await client
       .from("user_locations")
-      .select("role, location:locations(id,name)")
+      .select("role, location:locations(id,name,kds_enabled)")
       .order("created_at");
     if (error) throw error;
     return (data || [])
@@ -134,10 +162,15 @@
   async function adminLocations() {
     const { data, error } = await client
       .from("locations")
-      .select("id,name,created_at")
+      .select("id,name,kds_enabled,created_at")
       .order("created_at");
     if (error) throw error;
-    return (data || []).map((location) => ({ id: location.id, name: location.name, role: "admin" }));
+    return (data || []).map((location) => ({
+      id: location.id,
+      name: location.name,
+      kds_enabled: location.kds_enabled !== false,
+      role: "admin"
+    }));
   }
 
   async function createLocation(name) {
@@ -166,6 +199,10 @@
   async function updateLocation(locationId, name) {
     const { error } = await client.from("locations").update({ name }).eq("id", locationId);
     if (error) throw error;
+  }
+
+  function setKdsEnabled(locationId, enabled) {
+    return queued({ type: "kdsSetting", locationId, enabled: enabled !== false });
   }
 
   function saveCatalogToLocations(locationIds, data) {
@@ -298,6 +335,10 @@
   function queueOfflineTimeEntry(entry) {
     enqueue({ type: "offlineTimeEntry", entry });
     return { queued: true };
+  }
+
+  function createKdsOrder(order) {
+    return queued({ type: "kdsOrder", order });
   }
 
   async function deleteCash(locationId, dateKey) {
@@ -483,8 +524,8 @@
   }
 
   global.CloudStore = {
-    configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, ensureAdminAccess, loadLocation, loadReportsForLocations,
-    saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncMasterData, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, queueOfflineTimeEntry, deleteCash, deleteSales,
+    configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, setKdsEnabled, ensureAdminAccess, loadLocation, loadReportsForLocations,
+    saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncMasterData, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, queueOfflineTimeEntry, createKdsOrder, deleteCash, deleteSales,
     submitReport, loadSubmittedReports, deleteSubmittedReport,
     loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue

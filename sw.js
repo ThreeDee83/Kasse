@@ -1,5 +1,5 @@
-const CACHE = "kassenraum-v65";
-const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./xlsx-export.js", "./submitted-report-export.js", "./pdf-export.js", "./cloud.js", "./config.js", "./manifest.webmanifest", "./vendor/supabase.js", "./vendor/xlsx.full.min.js", "./vendor/bcrypt.min.js", "./vendor/pdf-lib.min.js", "./assets/icons/favicon-32.png", "./assets/icons/apple-touch-icon.png", "./assets/icons/owncash-192.png", "./assets/icons/owncash-512.png", "./assets/icons/owncash-maskable-512.png", "./assets/pdf/stundenexport-vorlage.pdf"];
+const CACHE = "kassenraum-v67";
+const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./xlsx-export.js", "./submitted-report-export.js", "./kds-order.js", "./pdf-export.js", "./cloud.js", "./config.js", "./manifest.webmanifest", "./vendor/supabase.js", "./vendor/xlsx.full.min.js", "./vendor/bcrypt.min.js", "./vendor/pdf-lib.min.js", "./assets/icons/favicon-32.png", "./assets/icons/apple-touch-icon.png", "./assets/icons/owncash-192.png", "./assets/icons/owncash-512.png", "./assets/icons/owncash-maskable-512.png", "./assets/pdf/stundenexport-vorlage.pdf"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));

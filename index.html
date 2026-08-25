@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260825-9">
+  <link rel="stylesheet" href="styles.css?v=20260825-11">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -48,6 +48,9 @@
           <select id="locationSelector" aria-label="Standort auswählen"></select>
         </label>
         <div class="date-chip" id="dateChip"></div>
+        <button class="kds-toggle active" id="kdsToggleButton" type="button" aria-pressed="true" title="KDS für diesen Standort ausschalten">
+          <span class="kds-toggle-dot" aria-hidden="true"></span><span id="kdsToggleLabel">KDS EIN</span>
+        </button>
         <button class="report-button" id="reportsButton" aria-label="Abrechnung öffnen">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19V2"/></svg>
           <span>Abrechnung</span>
@@ -182,6 +185,17 @@
             <label>Standortabrechnung<select id="billingModeSelect"><option value="separate">Getrennt je ausgewähltem Standort</option><option value="combined">Gemeinsam für alle Standorte</option></select></label>
             <label>Abrechnungs-E-Mail 1<input id="billingEmailInput" type="email" placeholder="abrechnung@beispiel.at"></label>
             <label>Zweite Abrechnungs-E-Mail<input id="billingEmail2Input" type="email" placeholder="Optional"></label>
+          </details>
+          <details class="admin-card admin-section" open>
+            <summary><span><span class="eyebrow">KÜCHE</span><strong>Kitchen Display System</strong></span></summary>
+            <p>Öffnet die standortbezogene Küchenanzeige auf diesem oder einem anderen Gerät.</p>
+            <div class="kds-admin-link">
+              <code id="kdsUrlLabel"></code>
+              <div class="admin-button-row">
+                <a id="kdsOpenLink" class="secondary-button" href="kds/" target="_blank" rel="noopener">KDS öffnen</a>
+                <button id="copyKdsLinkButton" class="secondary-button" type="button">Link kopieren</button>
+              </div>
+            </div>
           </details>
           <details class="admin-card admin-section">
             <summary><span><span class="eyebrow">STANDORTE</span><strong>Standorte verwalten</strong></span></summary>
@@ -477,6 +491,14 @@
         <label class="payment-entry">Gegebener Betrag
           <input id="paymentAmountInput" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00" required>
         </label>
+        <div id="paymentPagerWrap" class="payment-entry payment-pager hidden">
+          <label for="paymentPagerInput">Pager-Nummer</label>
+          <div class="payment-pager-entry">
+            <input id="paymentPagerInput" type="text" inputmode="numeric" pattern="[0-9]{1,6}" maxlength="6" autocomplete="off" placeholder="z. B. 24">
+            <button id="noPagerButton" class="secondary-button no-pager-button" type="button" aria-pressed="false">Kein Pager</button>
+          </div>
+          <small>Wird zusammen mit den Speisen an das KDS übertragen.</small>
+        </div>
         <button id="exactPaymentButton" class="text-button payment-exact" type="button">Passend erhalten</button>
         <div id="paymentChangeRow" class="payment-change">
           <span id="paymentChangeLabel">Rückgeld</span>
@@ -603,10 +625,11 @@
   <script src="vendor/bcrypt.min.js?v=2.4.3"></script>
   <script src="vendor/pdf-lib.min.js?v=1.17.1"></script>
   <script src="config.js?v=20260722-6"></script>
-  <script src="cloud.js?v=20260825-9"></script>
+  <script src="cloud.js?v=20260825-11"></script>
   <script src="xlsx-export.js?v=20260825-7"></script>
   <script src="submitted-report-export.js?v=20260825-2"></script>
+  <script src="kds-order.js?v=20260825-2"></script>
   <script src="pdf-export.js?v=20260825-2"></script>
-  <script src="app.js?v=20260825-11"></script>
+  <script src="app.js?v=20260825-12"></script>
 </body>
 </html>

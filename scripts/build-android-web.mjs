@@ -14,6 +14,7 @@ const runtimeFiles = [
   "config.js",
   "xlsx-export.js",
   "submitted-report-export.js",
+  "kds-order.js",
   "pdf-export.js",
   "manifest.webmanifest",
   "sw.js"
@@ -26,6 +27,7 @@ for (const file of runtimeFiles) {
   await copyFile(join(projectRoot, file), join(outputDir, file));
 }
 await cp(join(projectRoot, "assets"), join(outputDir, "assets"), { recursive: true });
+await cp(join(projectRoot, "kds"), join(outputDir, "kds"), { recursive: true });
 
 const vendorFiles = [
   ["node_modules/@supabase/supabase-js/dist/umd/supabase.js", "vendor/supabase.js"],

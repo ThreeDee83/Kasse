@@ -31,4 +31,10 @@ const sampleHash = bcrypt.hashSync("1234", 6);
 assert.equal(bcrypt.compareSync("1234", sampleHash), true);
 assert.equal(bcrypt.compareSync("4321", sampleHash), false);
 
+const kdsHtml = await readFile("kds/index.html", "utf8");
+assert.equal(/<script[^>]+src="https?:\/\//i.test(kdsHtml), false, "Das KDS darf keine CDN-Skripte benötigen");
+for (const path of ["kds/kds.js", "kds/kds.css", "kds/sw.js", "kds-order.js"]) {
+  assert.equal(existsSync(path), true, `Fehlende KDS-Datei: ${path}`);
+}
+
 console.log("Offline-Assets und bcrypt-PIN-Prüfung erfolgreich geprüft.");

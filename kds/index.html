@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#07110f">
+  <meta name="application-name" content="OwnCash KDS">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="OwnCash KDS">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png">
+  <title>OwnCash KDS</title>
+  <link rel="stylesheet" href="kds.css?v=20260825-2">
+</head>
+<body>
+  <section id="loginScreen" class="login-screen">
+    <form id="loginForm" class="login-card">
+      <img src="../assets/icons/owncash-192.png" alt="OwnCash">
+      <p class="eyebrow">KITCHEN DISPLAY SYSTEM</p>
+      <h1>OwnCash KDS</h1>
+      <p>Mit einem OwnCash-Konto anmelden.</p>
+      <label>E-Mail<input id="loginEmail" type="email" autocomplete="username" required></label>
+      <label>Passwort<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <p id="loginError" class="error hidden"></p>
+      <button type="submit">Anmelden</button>
+    </form>
+  </section>
+
+  <div id="kdsApp" class="hidden">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/icons/owncash-192.png" alt="">
+        <div><strong>OwnCash KDS</strong><small id="currentDate"></small></div>
+      </div>
+      <div class="topbar-actions">
+        <label>Standort<select id="locationSelect" aria-label="KDS-Standort"></select></label>
+        <span id="connectionStatus" class="connection-status">Online</span>
+        <button id="logoutButton" class="quiet-button" type="button">Abmelden</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="completion-panel">
+        <form id="completeForm">
+          <label for="pagerInput">Pager fertigmelden</label>
+          <div class="completion-entry">
+            <input id="pagerInput" type="text" inputmode="numeric" pattern="[0-9]{1,6}" maxlength="6" autocomplete="off" placeholder="Pager-Nr." required>
+            <button type="submit">Erledigt</button>
+          </div>
+          <small>Pager-Nummer eingeben und mit Enter bestätigen.</small>
+          <p id="completionMessage" class="completion-message" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="orders-section">
+        <div class="orders-toolbar">
+          <div class="view-tabs" role="tablist">
+            <button class="view-tab active" data-view="open" type="button">Offen <span id="openCount">0</span></button>
+            <button class="view-tab" data-view="done" type="button">Erledigt <span id="doneCount">0</span></button>
+          </div>
+          <button id="refreshButton" class="quiet-button" type="button">Aktualisieren</button>
+        </div>
+        <div id="ordersGrid" class="orders-grid" aria-live="polite"></div>
+        <div id="emptyState" class="empty-state hidden"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../vendor/supabase.js?v=2.112.4"></script>
+  <script src="../config.js"></script>
+  <script src="../kds-order.js?v=20260825-2"></script>
+  <script src="kds.js?v=20260825-2"></script>
+</body>
+</html>

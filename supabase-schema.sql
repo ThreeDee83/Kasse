@@ -3,8 +3,12 @@ create extension if not exists pgcrypto;
 create table if not exists public.locations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  kds_enabled boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+alter table public.locations
+add column if not exists kds_enabled boolean not null default true;
 
 create table if not exists public.user_locations (
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -30,6 +34,33 @@ create table if not exists public.sales (
   total numeric(12,2) not null default 0,
   items jsonb not null default '[]'::jsonb
 );
+
+create table if not exists public.kds_orders (
+  id uuid primary key default gen_random_uuid(),
+  sale_id text not null unique references public.sales(id) on delete cascade,
+  location_id uuid not null references public.locations(id) on delete cascade,
+  pager_number text,
+  items jsonb not null default '[]'::jsonb check (jsonb_typeof(items) = 'array'),
+  received_at timestamptz not null default now(),
+  completed_at timestamptz,
+  completed_by uuid references auth.users(id) on delete set null,
+  created_by uuid references auth.users(id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now(),
+  check (completed_at is null or completed_at >= received_at)
+);
+
+alter table public.kds_orders alter column pager_number drop not null;
+alter table public.kds_orders drop constraint if exists kds_orders_pager_number_check;
+alter table public.kds_orders add constraint kds_orders_pager_number_check
+check (pager_number is null or pager_number ~ '^[0-9]{1,6}$');
+
+create index if not exists kds_orders_open_location_time_idx
+on public.kds_orders (location_id, received_at)
+where completed_at is null;
+
+create index if not exists kds_orders_done_location_time_idx
+on public.kds_orders (location_id, completed_at desc)
+where completed_at is not null;
 
 create table if not exists public.cash_balances (
   location_id uuid not null references public.locations(id) on delete cascade,
@@ -311,6 +342,24 @@ as $$ select exists(select 1 from user_locations where user_id = auth.uid()) $$;
 create or replace function public.is_any_admin()
 returns boolean language sql stable security definer set search_path = public
 as $$ select exists(select 1 from user_locations where user_id = auth.uid() and role = 'admin') $$;
+
+create or replace function public.set_kds_enabled(target_location uuid, enabled boolean)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if not public.is_location_member(target_location) and not public.is_any_admin() then
+    raise exception 'Location access required';
+  end if;
+  update public.locations
+  set kds_enabled = coalesce(enabled, true)
+  where id = target_location;
+  if not found then raise exception 'Location not found'; end if;
+  return coalesce(enabled, true);
+end;
+$$;
 
 create or replace function public.ensure_admin_access()
 returns integer language plpgsql security definer set search_path = public
@@ -632,6 +681,7 @@ revoke all on function public.is_location_member(uuid) from public;
 revoke all on function public.is_location_admin(uuid) from public;
 revoke all on function public.is_business_user() from public;
 revoke all on function public.is_any_admin() from public;
+revoke all on function public.set_kds_enabled(uuid, boolean) from public;
 revoke all on function public.ensure_admin_access() from public;
 revoke all on function public.create_location(text) from public;
 revoke all on function public.delete_location(uuid) from public;
@@ -645,6 +695,7 @@ grant execute on function public.is_location_member(uuid) to authenticated;
 grant execute on function public.is_location_admin(uuid) to authenticated;
 grant execute on function public.is_business_user() to authenticated;
 grant execute on function public.is_any_admin() to authenticated;
+grant execute on function public.set_kds_enabled(uuid, boolean) to authenticated;
 grant execute on function public.ensure_admin_access() to authenticated;
 grant execute on function public.create_location(text) to authenticated;
 grant execute on function public.delete_location(uuid) to authenticated;
@@ -659,6 +710,7 @@ alter table public.locations enable row level security;
 alter table public.user_locations enable row level security;
 alter table public.location_state enable row level security;
 alter table public.sales enable row level security;
+alter table public.kds_orders enable row level security;
 alter table public.cash_balances enable row level security;
 alter table public.report_submissions enable row level security;
 alter table public.employees enable row level security;
@@ -671,6 +723,7 @@ alter table public.employees replica identity full;
 alter table public.time_entries replica identity full;
 alter table public.employee_bonuses replica identity full;
 alter table public.report_submissions replica identity full;
+alter table public.kds_orders replica identity full;
 
 drop policy if exists "members read locations" on public.locations;
 drop policy if exists "admins update locations" on public.locations;
@@ -682,6 +735,10 @@ drop policy if exists "members read sales" on public.sales;
 drop policy if exists "members insert sales" on public.sales;
 drop policy if exists "members update queued sales" on public.sales;
 drop policy if exists "admins delete sales" on public.sales;
+drop policy if exists "members read kds orders" on public.kds_orders;
+drop policy if exists "members insert kds orders" on public.kds_orders;
+drop policy if exists "members update kds orders" on public.kds_orders;
+drop policy if exists "admins delete kds orders" on public.kds_orders;
 drop policy if exists "members read cash" on public.cash_balances;
 drop policy if exists "members insert cash" on public.cash_balances;
 drop policy if exists "members update cash" on public.cash_balances;
@@ -713,6 +770,10 @@ create policy "members read sales" on public.sales for select using (is_location
 create policy "members insert sales" on public.sales for insert with check (is_location_member(location_id));
 create policy "members update queued sales" on public.sales for update using (is_location_member(location_id));
 create policy "admins delete sales" on public.sales for delete using (is_location_admin(location_id));
+create policy "members read kds orders" on public.kds_orders for select using (is_location_member(location_id) or is_any_admin());
+create policy "members insert kds orders" on public.kds_orders for insert with check (is_location_member(location_id));
+create policy "members update kds orders" on public.kds_orders for update using (is_location_member(location_id)) with check (is_location_member(location_id));
+create policy "admins delete kds orders" on public.kds_orders for delete using (is_any_admin());
 create policy "members read cash" on public.cash_balances for select using (is_location_member(location_id) or is_any_admin());
 create policy "members insert cash" on public.cash_balances for insert with check (is_location_member(location_id));
 create policy "members update cash" on public.cash_balances for update using (is_location_member(location_id));
@@ -744,6 +805,12 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.sales;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.kds_orders;
 exception when duplicate_object then null;
 end $$;
 
@@ -789,7 +856,7 @@ begin
 exception when duplicate_object then null;
 end $$;
 -- Offline-Neustart und Offline-Stempeluhr
-+-- Einmalig im Supabase SQL Editor ausführen.
+-- Einmalig im Supabase SQL Editor ausführen.
 -- Ermöglicht das sichere Laden der bestehenden bcrypt-PIN-Prüfwerte
 -- und die spätere Synchronisierung lokal erfasster Stempelzeiten.
 
