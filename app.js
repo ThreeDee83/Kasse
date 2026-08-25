@@ -514,6 +514,33 @@ function renderProducts() {
   productGrid.querySelectorAll(".product-card").forEach((button) =>
     button.addEventListener("click", () => addToCart(button.dataset.id))
   );
+  updateProductQuantityBadges();
+}
+
+function updateProductQuantityBadges() {
+  const quantities = new Map(cart.map((entry) => [entry.productId, Number(entry.quantity || 0)]));
+  $("#productGrid").querySelectorAll(".product-card").forEach((button) => {
+    const product = data.products.find((item) => item.id === button.dataset.id);
+    const quantity = quantities.get(button.dataset.id) || 0;
+    let badge = button.querySelector(".product-quantity-badge");
+    button.setAttribute("aria-label", quantity
+      ? `${product?.name || "Artikel"} zum Beleg hinzufügen, ${quantity} im Beleg`
+      : `${product?.name || "Artikel"} zum Beleg hinzufügen`);
+    if (!quantity) {
+      badge?.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "product-quantity-badge";
+      badge.setAttribute("aria-hidden", "true");
+      button.appendChild(badge);
+    }
+    badge.textContent = quantity > 99 ? "99+" : String(quantity);
+    badge.classList.remove("is-updated");
+    void badge.offsetWidth;
+    badge.classList.add("is-updated");
+  });
 }
 
 function addToCart(productId) {
@@ -574,6 +601,7 @@ function renderCart() {
   );
   $("#subtotal").textContent = euro(cartTotal());
   $("#total").textContent = euro(cartTotal());
+  updateProductQuantityBadges();
 }
 
 function openSettings(tab = "categories") {

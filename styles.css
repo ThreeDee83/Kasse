@@ -117,6 +117,31 @@ h2 { margin: 0; font-size: 21px; }
 .product-card strong { position: relative; display: block; font: 700 16px/1.2 Manrope; overflow-wrap: anywhere; }
 .product-price { margin-top: 18px; font-size: 16px; font-weight: 700; }
 .product-add { position: absolute; right: 13px; bottom: 13px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--card-color); color: white; font-size: 18px; font-weight: 400; }
+.product-quantity-badge {
+  position: absolute;
+  z-index: 2;
+  top: 7px;
+  right: 7px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--white);
+  border-radius: 999px;
+  background: #ff3b30;
+  color: #fff;
+  font: 800 12px/1 "DM Sans", sans-serif;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 3px 9px rgba(0,0,0,.35), 0 0 0 1px rgba(255,59,48,.25);
+  pointer-events: none;
+}
+.product-quantity-badge.is-updated { animation: product-badge-pop .22s ease-out; }
+@keyframes product-badge-pop {
+  0% { transform: scale(.72); }
+  65% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
 
 .cart-panel { min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--line); background: var(--white); box-shadow: -12px 0 30px rgba(0,0,0,.12); }
 .cart-header { flex: 0 0 auto; padding: 29px 25px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); }
@@ -752,6 +777,14 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
     font-size: clamp(13px, 1.15vw, 16px);
     line-height: 1.12;
     overflow-wrap: anywhere;
+  }
+  .product-quantity-badge {
+    top: 5px;
+    right: 5px;
+    min-width: 22px;
+    height: 22px;
+    padding-inline: 5px;
+    font-size: 11px;
   }
 
   .cart-panel {
