@@ -1869,7 +1869,8 @@ function normalizeTimeTracking(remote) {
     locationId: entry.location_id || entry.locationId || null,
     hourlyRate: Number(entry.hourly_rate ?? entry.hourlyRate ?? employees.find((employee) => employee.id === (entry.employee_id || entry.employeeId))?.hourlyRate ?? 0),
     clockIn: entry.clock_in || entry.clockIn,
-    clockOut: entry.clock_out || entry.clockOut || null
+    clockOut: entry.clock_out || entry.clockOut || null,
+    note: entry.note || ""
   }));
   employeeBonuses = (remote.bonuses || []).map((bonus) => ({
     id: bonus.id,
@@ -2106,11 +2107,12 @@ function renderTimeAdministration() {
       <td>${escapeHtml(locationNameForTime(entry.locationId))}</td>
       <td>${formatDateTime(entry.clockIn)}</td><td class="${entry.clockOut ? "" : "time-open"}">${formatDateTime(entry.clockOut)}</td>
       <td class="numeric">${formatHours(hours)}</td>
+      <td>${escapeHtml(entry.note || "")}</td>
       <td><div class="time-row-actions">
         <button class="secondary-button edit-time-entry" data-id="${entry.id}">Bearbeiten</button>
         <button class="danger-button delete-time-entry" data-id="${entry.id}">Löschen</button>
       </div></td></tr>`;
-  }).join("") : `<tr><td colspan="6">Keine Stempelungen im gewählten Zeitraum.</td></tr>`;
+  }).join("") : `<tr><td colspan="7">Keine Stempelungen im gewählten Zeitraum.</td></tr>`;
   $$(".edit-time-entry").forEach((button) => button.addEventListener("click", () => openTimeEntryEditor(button.dataset.id)));
   $$(".delete-time-entry").forEach((button) => button.addEventListener("click", () => removeTimeEntry(button.dataset.id)));
 
@@ -2133,7 +2135,7 @@ async function clockEmployee(direction) {
         timeEntries.unshift({
           id: uid("time"), employeeId, locationId: currentLocationId,
           hourlyRate: Number(employee?.hourlyRate || 0),
-          clockIn: new Date().toISOString(), clockOut: null
+          clockIn: new Date().toISOString(), clockOut: null, note: ""
         });
       } else {
         if (!openEntry) throw new Error("Mitarbeiter ist nicht eingestempelt");
@@ -2288,7 +2290,8 @@ async function addManualTimeEntry(event) {
     locationId: currentLocationId,
     hourlyRate: Number(employeeForTime($("#manualEmployeeSelect").value)?.hourlyRate || 0),
     clockIn: start.toISOString(),
-    clockOut: end.toISOString()
+    clockOut: end.toISOString(),
+    note: $("#manualNoteInput").value.trim()
   };
   try {
     if (localMode) {
@@ -2298,6 +2301,7 @@ async function addManualTimeEntry(event) {
       await CloudStore.addTimeEntry(currentLocationId, entry);
       await reloadTimeTracking();
     }
+    $("#manualNoteInput").value = "";
     renderTimeTracking();
     showToast("Stempelzeit wurde hinzugefügt");
   } catch (error) {
@@ -2334,6 +2338,7 @@ function openTimeEntryEditor(entryId) {
   $("#timeEntryStartTimeInput").value = start.time;
   $("#timeEntryEndDateInput").value = end.date;
   $("#timeEntryEndTimeInput").value = end.time;
+  $("#timeEntryNoteInput").value = entry.note || "";
   $("#timeEntryDialog").showModal();
 }
 
@@ -2365,7 +2370,8 @@ async function saveEditedTimeEntry(event) {
       ? Number(existing.hourlyRate ?? employeeForTime(employeeId)?.hourlyRate ?? 0)
       : Number(employeeForTime(employeeId)?.hourlyRate || 0),
     clockIn: start.toISOString(),
-    clockOut: end ? end.toISOString() : null
+    clockOut: end ? end.toISOString() : null,
+    note: $("#timeEntryNoteInput").value.trim()
   };
   try {
     if (localMode) {
@@ -2466,7 +2472,8 @@ function exportTimeReport() {
       hours,
       hourlyRate,
       wages: hours * hourlyRate,
-      open: !entry.clockOut
+      open: !entry.clockOut,
+      note: entry.note || ""
     });
   });
   const payload = {
@@ -2480,6 +2487,121 @@ function exportTimeReport() {
   };
   XlsxExport.downloadTimeWorkbook(payload, `Arbeitszeit_${from}_${to}.xlsx`);
   showToast("Arbeitszeit-Excel wurde erstellt");
+}
+
+function pdfTimeLabel(value) {
+  if (!value) return "offen";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Intl.DateTimeFormat("de-AT", { hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function pdfDateLabel(dateKey) {
+  const date = new Date(`${dateKey}T12:00:00`);
+  const day = new Intl.DateTimeFormat("de-AT", { day: "2-digit", month: "2-digit", year: "2-digit" }).format(date);
+  const weekday = new Intl.DateTimeFormat("de-AT", { weekday: "short" }).format(date).replace(".", "");
+  return `${day} ${weekday}`;
+}
+
+function pdfDurationLabel(hours) {
+  const minutes = Math.max(0, Math.round(Number(hours || 0) * 60));
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function seasonYearForStamp(value) {
+  const firstStamp = new Date(value);
+  const year = firstStamp.getFullYear();
+  const cutoff = new Date(year, 9, 25, 0, 0, 0, 0);
+  return firstStamp < cutoff ? year - 1 : year;
+}
+
+async function exportTimePdfReport() {
+  if (!isAdminUser()) return;
+  if (!globalThis.PdfTimeExport) {
+    showToast("PDF-Bibliothek ist nicht verfügbar");
+    return;
+  }
+
+  const button = $("#exportTimePdfButton");
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "PDF wird erstellt …";
+  try {
+    const { from, to } = timeRange();
+    const reportEntries = timeEntries
+      .filter((entry) => {
+        const dateKey = localDateKey(new Date(entry.clockIn));
+        return dateKey >= from && dateKey <= to;
+      })
+      .sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn));
+    if (!reportEntries.length) throw new Error("Keine Stempelungen im gewählten Zeitraum");
+
+    const reportMap = new Map();
+    reportEntries.forEach((entry) => {
+      const employee = employeeForTime(entry.employeeId) || { name: "Unbekannt", hourlyRate: 0 };
+      if (!reportMap.has(entry.employeeId)) {
+        reportMap.set(entry.employeeId, {
+          employeeId: entry.employeeId,
+          employeeName: employee.name,
+          firstStamp: entry.clockIn,
+          rows: new Map()
+        });
+      }
+      const report = reportMap.get(entry.employeeId);
+      const dateKey = localDateKey(new Date(entry.clockIn));
+      const hours = entryDurationHours(entry);
+      const hourlyRate = Number(entry.hourlyRate ?? employee.hourlyRate ?? 0);
+      const current = report.rows.get(dateKey) || {
+        dateKey,
+        firstStart: entry.clockIn,
+        lastEnd: entry.clockOut,
+        hasOpenEntry: !entry.clockOut,
+        hours: 0,
+        wages: 0
+      };
+      if (new Date(entry.clockIn) < new Date(current.firstStart)) current.firstStart = entry.clockIn;
+      if (!entry.clockOut) current.hasOpenEntry = true;
+      if (entry.clockOut && (!current.lastEnd || new Date(entry.clockOut) > new Date(current.lastEnd))) current.lastEnd = entry.clockOut;
+      current.hours += hours;
+      current.wages += hours * hourlyRate;
+      report.rows.set(dateKey, current);
+    });
+
+    const employeeReports = [...reportMap.values()]
+      .sort((a, b) => a.employeeName.localeCompare(b.employeeName, "de"))
+      .map((report) => {
+        const rows = [...report.rows.values()].sort((a, b) => a.dateKey.localeCompare(b.dateKey)).map((row) => {
+          const bonus = employeeBonuses.find((item) => item.employeeId === report.employeeId && item.dateKey === row.dateKey);
+          const hourlyRate = row.hours > 0 ? row.wages / row.hours : 0;
+          const bonusAmount = Number(bonus?.amount || 0);
+          return {
+            dateLabel: pdfDateLabel(row.dateKey),
+            beginLabel: pdfTimeLabel(row.firstStart),
+            endLabel: row.hasOpenEntry ? "offen" : pdfTimeLabel(row.lastEnd),
+            hoursLabel: pdfDurationLabel(row.hours),
+            hours: row.hours,
+            hourlyRate,
+            bonus: bonusAmount,
+            total: row.wages + bonusAmount
+          };
+        });
+        return {
+          employeeName: report.employeeName,
+          seasonYear: seasonYearForStamp(report.firstStamp),
+          rows
+        };
+      });
+
+    const templateUrl = new URL("assets/pdf/stundenexport-vorlage.pdf", document.baseURI).href;
+    await PdfTimeExport.downloadTimePdf({ employeeReports }, templateUrl, `Stundenexport_${from}_${to}.pdf`);
+    showToast("Arbeitszeit-PDF wurde erstellt");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "PDF konnte nicht erstellt werden");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
 }
 
 function setSettingsTab(tab) {
@@ -3238,6 +3360,7 @@ $("#addEmployeeForm").addEventListener("submit", addEmployee);
 $("#manualTimeForm").addEventListener("submit", addManualTimeEntry);
 $("#bonusForm").addEventListener("submit", saveEmployeeBonus);
 $("#exportTimeButton").addEventListener("click", exportTimeReport);
+$("#exportTimePdfButton").addEventListener("click", exportTimePdfReport);
 $$(".open-settings").forEach((button) => button.addEventListener("click", () => openSettings("products")));
 $$(".settings-tab").forEach((button) => button.addEventListener("click", () => setSettingsTab(button.dataset.tab)));
 $$(".report-filter").forEach((button) => button.addEventListener("click", async () => {

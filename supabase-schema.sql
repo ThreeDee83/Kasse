@@ -75,6 +75,7 @@ create table if not exists public.time_entries (
   hourly_rate numeric(10,2) not null default 0 check (hourly_rate >= 0),
   clock_in timestamptz not null,
   clock_out timestamptz,
+  note text not null default '',
   created_by uuid references auth.users(id) on delete set null default auth.uid(),
   created_at timestamptz not null default now(),
   check (clock_out is null or clock_out > clock_in)
@@ -102,6 +103,7 @@ alter table public.time_entries alter column location_id drop not null;
 alter table public.time_entries drop constraint if exists time_entries_location_id_fkey;
 alter table public.time_entries add constraint time_entries_location_id_fkey foreign key (location_id) references public.locations(id) on delete set null;
 alter table public.time_entries add column if not exists hourly_rate numeric(10,2);
+alter table public.time_entries add column if not exists note text not null default '';
 update public.time_entries entry
 set hourly_rate = employee.hourly_rate
 from public.employees employee

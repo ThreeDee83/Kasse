@@ -294,13 +294,13 @@
     const allEmployees = payload.employees || [];
     const workbook = XLSX.utils.book_new();
 
-    const details = [["Datum", "Mitarbeiter", "Standort", "Eingestempelt", "Ausgestempelt", "Arbeitszeit", "Stundensatz", "Grundlohn", "Status"]];
+    const details = [["Datum", "Mitarbeiter", "Standort", "Eingestempelt", "Ausgestempelt", "Arbeitszeit", "Stundensatz", "Grundlohn", "Status", "Notiz"]];
     detailRows.forEach((row) => details.push([
       row.dateLabel, row.employeeName, row.locationName, row.clockInLabel, row.clockOutLabel,
-      row.hours / 24, row.hourlyRate, row.wages, row.open ? "Offen" : "Abgeschlossen"
+      row.hours / 24, row.hourlyRate, row.wages, row.open ? "Offen" : "Abgeschlossen", row.note || ""
     ]));
     const detailSheet = XLSX.utils.aoa_to_sheet(details);
-    styleSheet(detailSheet, [14, 24, 20, 21, 21, 14, 15, 15, 15], [6, 7], [], [5]);
+    styleSheet(detailSheet, [14, 24, 20, 21, 21, 14, 15, 15, 15, 32], [6, 7], [], [5]);
     XLSX.utils.book_append_sheet(workbook, detailSheet, "Stempelzeiten");
 
     const detailLastRow = Math.max(detailRows.length + 1, 2);

@@ -382,7 +382,8 @@
       employee_id: entry.employeeId,
       hourly_rate: entry.hourlyRate,
       clock_in: entry.clockIn,
-      clock_out: entry.clockOut
+      clock_out: entry.clockOut,
+      note: entry.note || ""
     });
     if (error) throw error;
   }
@@ -393,7 +394,8 @@
       employee_id: entry.employeeId,
       hourly_rate: entry.hourlyRate,
       clock_in: entry.clockIn,
-      clock_out: entry.clockOut
+      clock_out: entry.clockOut,
+      note: entry.note || ""
     }).eq("id", entry.id);
     if (error) throw error;
   }

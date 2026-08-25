@@ -1,5 +1,5 @@
-const CACHE = "kassenraum-v58";
-const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./xlsx-export.js", "./cloud.js", "./config.js", "./manifest.webmanifest"];
+const CACHE = "kassenraum-v59";
+const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./xlsx-export.js", "./pdf-export.js", "./cloud.js", "./config.js", "./manifest.webmanifest", "./vendor/pdf-lib.min.js", "./assets/pdf/stundenexport-vorlage.pdf"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260825-5">
+  <link rel="stylesheet" href="styles.css?v=20260825-7">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -235,10 +235,16 @@
             <h1>Zeiterfassung</h1>
             <p>Standortunabhängig einstempeln – die Stunden werden gemeinsam je Mitarbeiter ausgewertet.</p>
           </div>
-          <button id="exportTimeButton" class="primary-button export-button admin-only">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
-            Excel exportieren
-          </button>
+          <div class="time-export-actions admin-only">
+            <button id="exportTimeButton" class="primary-button export-button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+              Excel exportieren
+            </button>
+            <button id="exportTimePdfButton" class="secondary-button export-button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+              PDF exportieren
+            </button>
+          </div>
         </div>
       </div>
 
@@ -280,6 +286,7 @@
               <label>Startzeit<input id="manualStartInput" type="time" required></label>
               <label>Enddatum<input id="manualEndDateInput" type="date" required></label>
               <label>Endzeit<input id="manualEndInput" type="time" required></label>
+              <label class="time-form-note">Notiz<input id="manualNoteInput" type="text" maxlength="500" placeholder="Optional"></label>
               <button class="secondary-button" type="submit">Stempelzeit hinzufügen</button>
             </form>
           </article>
@@ -309,7 +316,7 @@
 
         <article class="time-table-card">
           <div><p class="eyebrow">STEMPELUNGEN</p><h2>Einzelne Stempelzeiten</h2></div>
-          <div class="time-table-wrap"><table class="time-table"><thead><tr><th>Mitarbeiter</th><th>Standort</th><th>Eingestempelt</th><th>Ausgestempelt</th><th>Dauer</th><th></th></tr></thead><tbody id="timeEntriesTable"></tbody></table></div>
+          <div class="time-table-wrap"><table class="time-table"><thead><tr><th>Mitarbeiter</th><th>Standort</th><th>Eingestempelt</th><th>Ausgestempelt</th><th>Dauer</th><th>Notiz</th><th></th></tr></thead><tbody id="timeEntriesTable"></tbody></table></div>
         </article>
       </section>
     </main>
@@ -502,6 +509,7 @@
           <label>Enddatum<input id="timeEntryEndDateInput" type="date"></label>
           <label>Enduhrzeit<input id="timeEntryEndTimeInput" type="time" step="1"></label>
         </div>
+        <label>Notiz<input id="timeEntryNoteInput" type="text" maxlength="500" placeholder="Optional"></label>
       </div>
       <div class="dialog-actions">
         <button type="button" class="secondary-button" id="timeEntryDialogCancel">Abbrechen</button>
@@ -566,9 +574,11 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="vendor/pdf-lib.min.js?v=1.17.1"></script>
   <script src="config.js?v=20260722-6"></script>
-  <script src="cloud.js?v=20260722-6"></script>
-  <script src="xlsx-export.js?v=20260722-6"></script>
-  <script src="app.js?v=20260825-2"></script>
+  <script src="cloud.js?v=20260825-7"></script>
+  <script src="xlsx-export.js?v=20260825-7"></script>
+  <script src="pdf-export.js?v=20260825-2"></script>
+  <script src="app.js?v=20260825-7"></script>
 </body>
 </html>

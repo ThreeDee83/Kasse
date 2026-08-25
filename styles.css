@@ -358,6 +358,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .time-topline > .back-button { margin-bottom: 22px; }
 .time-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
 .time-heading > div > p:last-child { margin: 7px 0 0; color: var(--muted); }
+.time-export-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; }
 .clock-station { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(220px, .8fr) auto; align-items: end; gap: 22px; padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--white); box-shadow: var(--shadow); }
 .clock-station > div:first-child > p:last-child { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
 .clock-station label, .time-filters label, .time-card label { color: var(--muted); font-size: 12px; font-weight: 700; }
@@ -378,6 +379,7 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
 .time-card h2 { margin-bottom: 16px; font-size: 17px; }
 .time-inline-form { display: grid; grid-template-columns: 1fr 150px auto; align-items: end; gap: 9px; }
 .time-form-grid { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 10px; }
+.time-form-note { grid-column: 1 / -1; }
 .time-form-grid button { justify-self: start; }
 .employee-admin-list, .bonus-admin-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 .employee-admin-row { display: grid; grid-template-columns: minmax(140px, 1fr) 125px auto auto auto; align-items: end; gap: 8px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
@@ -497,7 +499,8 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
   .report-actions { display: grid; grid-template-columns: 1fr; margin-top: 18px; }
   .reports-heading .report-actions .export-button { margin-top: 0; }
   .time-heading { display: block; }
-  .time-heading .export-button { width: 100%; justify-content: center; margin-top: 18px; }
+  .time-export-actions { margin-top: 18px; }
+  .time-heading .export-button { width: 100%; justify-content: center; }
   .time-filters { grid-template-columns: 1fr; }
   .time-filters > div { grid-column: auto; }
   .time-kpis { grid-template-columns: 1fr; }
