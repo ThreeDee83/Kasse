@@ -4059,7 +4059,7 @@ $("#loginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const errorOutput = $("#loginError");
   if (!CloudStore.configured) {
-    errorOutput.textContent = "Supabase ist noch nicht konfiguriert.";
+    errorOutput.textContent = CloudStore.initializationError || "Supabase ist noch nicht konfiguriert.";
     errorOutput.classList.remove("hidden");
     return;
   }
@@ -4099,6 +4099,7 @@ async function boot() {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
   if (!CloudStore.configured) {
+    $("#configHint").textContent = CloudStore.initializationError || "Supabase ist noch nicht konfiguriert. Trage URL und Anon-Key in config.js ein.";
     $("#configHint").classList.remove("hidden");
     return;
   }

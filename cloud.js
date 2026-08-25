@@ -1,12 +1,23 @@
 (function (global) {
   const config = global.KASSENRAUM_CONFIG || {};
-  const configured = /^https:\/\/.+\.supabase\.co$/.test(config.supabaseUrl || "")
+  const hasValidConfig = /^https:\/\/.+\.supabase\.co$/.test(config.supabaseUrl || "")
     && !String(config.supabaseAnonKey || "").startsWith("DEIN_");
-  const client = configured && global.supabase
-    ? global.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-    })
-    : null;
+  let client = null;
+  let initializationError = "";
+  if (!hasValidConfig) {
+    initializationError = "Supabase ist noch nicht vollständig konfiguriert.";
+  } else if (!global.supabase?.createClient) {
+    initializationError = "Die Supabase-Bibliothek konnte nicht geladen werden. Bitte Website-Cache leeren und neu laden.";
+  } else {
+    try {
+      client = global.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+    } catch (error) {
+      initializationError = error?.message || "Der Supabase-Client konnte nicht gestartet werden.";
+    }
+  }
+  const configured = Boolean(client);
   let channel = null;
   const queueKey = "kassenraum-sync-queue";
 
@@ -134,6 +145,7 @@
   }
 
   async function signIn(email, password) {
+    if (!client?.auth) throw new Error(initializationError || "Supabase ist nicht verfügbar.");
     return client.auth.signInWithPassword({ email, password });
   }
 
@@ -538,7 +550,7 @@
   }
 
   global.CloudStore = {
-    configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, setKdsEnabled, ensureAdminAccess, loadLocation, loadReportsForLocations,
+    configured, initializationError, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, setKdsEnabled, ensureAdminAccess, loadLocation, loadReportsForLocations,
     saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncMasterData, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, queueOfflineTimeEntry, createKdsOrder, deleteCash, deleteSales,
     submitReport, loadSubmittedReports, deleteSubmittedReport,
     loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,

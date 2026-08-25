@@ -2,13 +2,23 @@
   "use strict";
 
   const config = globalThis.KASSENRAUM_CONFIG || {};
-  const configured = /^https:\/\/.+\.supabase\.co$/.test(config.supabaseUrl || "")
+  const hasValidConfig = /^https:\/\/.+\.supabase\.co$/.test(config.supabaseUrl || "")
     && !String(config.supabaseAnonKey || "").startsWith("DEIN_");
-  const client = configured && globalThis.supabase
-    ? globalThis.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-    })
-    : null;
+  let client = null;
+  let initializationError = "";
+  if (!hasValidConfig) {
+    initializationError = "Supabase ist noch nicht vollständig konfiguriert.";
+  } else if (!globalThis.supabase?.createClient) {
+    initializationError = "Die Supabase-Bibliothek konnte nicht geladen werden. Bitte Website-Cache leeren und neu laden.";
+  } else {
+    try {
+      client = globalThis.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+    } catch (error) {
+      initializationError = error?.message || "Der Supabase-Client konnte nicht gestartet werden.";
+    }
+  }
 
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -215,7 +225,7 @@
       navigator.serviceWorker.register("./sw.js").catch(() => {});
     }
     if (!client) {
-      $("#loginError").textContent = "Supabase ist nicht konfiguriert.";
+      $("#loginError").textContent = initializationError || "Supabase ist nicht konfiguriert.";
       $("#loginError").classList.remove("hidden");
       return;
     }
@@ -243,7 +253,7 @@
     output.classList.add("loading");
     output.classList.remove("hidden");
     try {
-      if (!client) throw new Error("Supabase ist noch nicht konfiguriert.");
+      if (!client?.auth) throw new Error(initializationError || "Supabase ist nicht verfügbar.");
       const { data, error } = await client.auth.signInWithPassword({
         email: $("#loginEmail").value.trim(), password: $("#loginPassword").value
       });
