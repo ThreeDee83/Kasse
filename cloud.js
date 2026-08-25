@@ -183,30 +183,24 @@
         id: employee.id,
         name: String(employee.name || "").trim(),
         hourlyRate: Number(employee.hourlyRate ?? employee.hourly_rate ?? 0),
-        active: employee.active !== false
+        active: employee.active !== false,
+        pin: String(employee.pin || ""),
+        pinConfigured: employee.pinConfigured === true
       }))
       .filter((employee) => employee.name && Number.isFinite(employee.hourlyRate));
     if (!incoming.length) return { synced: 0 };
 
-    const { data: existingEmployees, error: loadError } = await client.from("employees").select("*");
+    const { data: existingEmployees, error: loadError } = await client
+      .from("employees")
+      .select("id,location_id,name,hourly_rate,active,created_at,pin_configured");
     if (loadError) throw loadError;
     const existingByName = new Map((existingEmployees || []).map((employee) => [normalizedName(employee.name), employee]));
 
     for (const employee of incoming) {
       const existing = existingByName.get(normalizedName(employee.name));
-      const values = {
-        name: employee.name,
-        hourly_rate: employee.hourlyRate,
-        active: employee.active
-      };
-      if (existing?.id) {
-        const { error } = await client.from("employees").update(values).eq("id", existing.id);
-        if (error) throw error;
-      } else {
-        const { data, error } = await client.from("employees").insert({ ...values, location_id: locationId }).select("*").single();
-        if (error) throw error;
-        if (data?.name) existingByName.set(normalizedName(data.name), data);
-      }
+      if (!existing?.id && !employee.pin) throw new Error(`Für ${employee.name} fehlt eine vierstellige PIN.`);
+      const id = await saveEmployee(locationId, { ...employee, id: existing?.id || null });
+      if (!existing?.id && id) existingByName.set(normalizedName(employee.name), { id, name: employee.name });
     }
     return { synced: incoming.length };
   }
@@ -319,7 +313,7 @@
 
   async function loadTimeTracking() {
     const [employeesResult, entriesResult, bonusesResult] = await Promise.all([
-      client.from("employees").select("*").order("name"),
+      client.from("employees").select("id,location_id,name,hourly_rate,active,created_at,pin_configured").order("name"),
       client.from("time_entries").select("*").order("clock_in", { ascending: false }),
       client.from("employee_bonuses").select("*").order("date_key", { ascending: false })
     ]);
@@ -333,42 +327,42 @@
     };
   }
 
-  async function clockIn(employeeId, locationId) {
+  async function clockIn(employeeId, locationId, pin) {
     const { data, error } = await client.rpc("clock_in_employee", {
       target_employee: employeeId,
-      target_location: locationId
+      target_location: locationId,
+      employee_pin: pin
     });
     if (error) throw error;
     return data;
   }
 
-  async function clockOut(employeeId) {
-    const { data, error } = await client.rpc("clock_out_employee", { target_employee: employeeId });
+  async function clockOut(employeeId, pin) {
+    const { data, error } = await client.rpc("clock_out_employee", {
+      target_employee: employeeId,
+      employee_pin: pin
+    });
     if (error) throw error;
     return data;
   }
 
   async function saveEmployee(locationId, employee, recalculatePast = false) {
-    const values = {
-      name: employee.name,
-      hourly_rate: employee.hourlyRate,
-      active: employee.active
-    };
-    const query = employee.id
-      ? client.from("employees").update(values).eq("id", employee.id)
-      : client.from("employees").insert({ ...values, location_id: locationId });
-    const { error } = await query;
-    if (error) throw error;
-    if (employee.id && recalculatePast) {
-      const cutoff = new Date();
-      cutoff.setMonth(cutoff.getMonth() - 2);
-      const { error: rateError } = await client
-        .from("time_entries")
-        .update({ hourly_rate: employee.hourlyRate })
-        .eq("employee_id", employee.id)
-        .gte("clock_in", cutoff.toISOString());
-      if (rateError) throw rateError;
+    const { data, error } = await client.rpc("save_employee_with_pin", {
+      target_employee: employee.id || null,
+      target_location: locationId,
+      employee_name: employee.name,
+      employee_hourly_rate: employee.hourlyRate,
+      employee_active: employee.active !== false,
+      employee_pin: employee.pin || null,
+      recalculate_past: Boolean(recalculatePast)
+    });
+    if (error) {
+      if (["42883", "PGRST202"].includes(error.code)) {
+        throw new Error("Supabase-PIN-Migration fehlt. Bitte supabase-employee-pin.sql ausführen.");
+      }
+      throw error;
     }
+    return data;
   }
 
   async function deleteEmployee(employeeId) {

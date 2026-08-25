@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260825-7">
+  <link rel="stylesheet" href="styles.css?v=20260825-8">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -188,8 +188,10 @@
             <form id="addEmployeeForm" class="time-inline-form">
               <label>Name<input id="employeeNameInput" type="text" required placeholder="Vor- und Nachname"></label>
               <label>Stundensatz (€)<input id="employeeRateInput" type="number" min="0" step="0.01" required value="0"></label>
+              <label>PIN-Code<input id="employeePinInput" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" required placeholder="4 Ziffern"></label>
               <button class="primary-button" type="submit">Anlegen</button>
             </form>
+            <p class="settings-hint">Die vierstellige PIN wird verschlüsselt gespeichert und bei jedem Ein- und Ausstempeln abgefragt.</p>
             <div id="employeeAdminList" class="employee-admin-list"></div>
           </details>
           <details class="admin-card admin-section">
@@ -204,7 +206,7 @@
               <label class="file-button">Excel importieren<input id="excelImportInput" type="file" accept=".xlsx,.xls"></label>
               <button id="syncMasterDataButton" class="primary-button" type="button">Kategorien, Artikel &amp; MA synchronisieren</button>
             </div>
-            <p class="settings-hint">Sortiment: Blatt „Sortiment“ mit Zeile 1 = Kategorien, Spalte A = Artikel. Mitarbeiter: Blatt „Mitarbeiter“ mit Name, Stundensatz, Aktiv.</p>
+            <p class="settings-hint">Sortiment: Blatt „Sortiment“ mit Zeile 1 = Kategorien, Spalte A = Artikel. Mitarbeiter: Blatt „Mitarbeiter“ mit Name, Stundensatz, Aktiv und optional PIN. Aus Sicherheitsgründen werden bestehende PINs nie exportiert.</p>
           </details>
           <details class="admin-card admin-section danger-card">
             <summary><span><span class="eyebrow">GEFAHRENZONE</span><strong>Daten löschen</strong></span></summary>
@@ -491,6 +493,24 @@
     </section>
   </dialog>
 
+  <dialog id="employeePinDialog" class="editor-dialog pin-dialog">
+    <form id="employeePinForm">
+      <div class="dialog-header">
+        <div><p class="eyebrow">STEMPELUHR</p><h2 id="employeePinTitle">PIN eingeben</h2></div>
+        <button type="button" class="dialog-close" id="employeePinDialogClose" aria-label="Schließen">×</button>
+      </div>
+      <p id="employeePinMessage" class="dialog-message"></p>
+      <label class="pin-dialog-label">Vierstelliger PIN
+        <input id="clockPinInput" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" required placeholder="••••">
+      </label>
+      <p class="dialog-hint">Der PIN wird nicht angezeigt oder in Exporten ausgegeben.</p>
+      <div class="dialog-actions">
+        <button type="button" class="secondary-button" id="employeePinDialogCancel">Abbrechen</button>
+        <button type="submit" class="primary-button">Bestätigen</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="timeEntryDialog" class="editor-dialog">
     <form id="timeEntryEditForm">
       <div class="dialog-header">
@@ -576,9 +596,9 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="vendor/pdf-lib.min.js?v=1.17.1"></script>
   <script src="config.js?v=20260722-6"></script>
-  <script src="cloud.js?v=20260825-7"></script>
+  <script src="cloud.js?v=20260825-8"></script>
   <script src="xlsx-export.js?v=20260825-7"></script>
   <script src="pdf-export.js?v=20260825-2"></script>
-  <script src="app.js?v=20260825-7"></script>
+  <script src="app.js?v=20260825-8"></script>
 </body>
 </html>

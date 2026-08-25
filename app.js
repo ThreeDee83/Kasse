@@ -271,7 +271,10 @@ function loadLocalLocation(locationId) {
       return fallback;
     }
   };
-  employees = readGlobal("kassenraum-employees-global", read("kassenraum-employees", []));
+  employees = readGlobal("kassenraum-employees-global", read("kassenraum-employees", [])).map((employee) => ({
+    ...employee,
+    pinConfigured: Boolean(employee.pinConfigured && employee.pinHash)
+  }));
   timeEntries = readGlobal("kassenraum-time-entries-global", read("kassenraum-time-entries", []))
     .map((entry) => ({
       ...entry,
@@ -1861,7 +1864,8 @@ function normalizeTimeTracking(remote) {
     id: employee.id,
     name: employee.name,
     hourlyRate: Number(employee.hourly_rate ?? employee.hourlyRate ?? 0),
-    active: employee.active !== false
+    active: employee.active !== false,
+    pinConfigured: employee.pin_configured === true || employee.pinConfigured === true
   }));
   timeEntries = (remote.timeEntries || []).map((entry) => ({
     id: entry.id,
@@ -2068,6 +2072,7 @@ function renderEmployeeAdministration() {
     <div class="employee-admin-row" data-id="${employee.id}">
       <label>Name<input class="employee-edit-name" value="${escapeHtml(employee.name)}"></label>
       <label>Stundensatz (€)<input class="employee-edit-rate" type="number" min="0" step="0.01" value="${employee.hourlyRate.toFixed(2)}"></label>
+      <label>Neue PIN<input class="employee-edit-pin pin-input" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="new-password" placeholder="${employee.pinConfigured ? "••••" : "4 Ziffern"}"><small class="employee-pin-status ${employee.pinConfigured ? "" : "missing"}">${employee.pinConfigured ? "PIN eingerichtet" : "PIN fehlt"}</small></label>
       <label class="employee-active"><input class="employee-edit-active" type="checkbox" ${employee.active ? "checked" : ""}> Aktiv</label>
       <button class="secondary-button save-employee" type="button">Speichern</button>
       <button class="danger-button delete-employee" type="button">Entfernen</button>
@@ -2123,15 +2128,84 @@ function renderTimeAdministration() {
   $$(".delete-bonus").forEach((button) => button.addEventListener("click", () => removeBonus(button.dataset.id)));
 }
 
+function validEmployeePin(pin) {
+  return /^\d{4}$/.test(String(pin || ""));
+}
+
+async function hashLocalEmployeePin(employeeId, pin) {
+  if (!globalThis.crypto?.subtle) throw new Error("PIN-Verschlüsselung ist in diesem Browser nicht verfügbar.");
+  const bytes = new TextEncoder().encode(`owncash:${employeeId}:${pin}`);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function localEmployeeUsesPin(pin, exceptEmployeeId = null) {
+  for (const employee of employees) {
+    if (employee.id === exceptEmployeeId || !employee.pinHash) continue;
+    if (await hashLocalEmployeePin(employee.id, pin) === employee.pinHash) return true;
+  }
+  return false;
+}
+
+function requestEmployeePin(employee, direction) {
+  return new Promise((resolve) => {
+    const dialog = $("#employeePinDialog");
+    const form = $("#employeePinForm");
+    const input = $("#clockPinInput");
+    let finished = false;
+    const finish = (value) => {
+      if (finished) return;
+      finished = true;
+      form.onsubmit = null;
+      dialog.oncancel = null;
+      if (dialog.open) dialog.close();
+      input.value = "";
+      resolve(value);
+    };
+    $("#employeePinTitle").textContent = direction === "in" ? "Einstempeln bestätigen" : "Ausstempeln bestätigen";
+    $("#employeePinMessage").textContent = `${employee.name}: Bitte persönlichen PIN eingeben.`;
+    input.value = "";
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const pin = input.value.trim();
+      if (!validEmployeePin(pin)) {
+        input.setCustomValidity("Bitte genau vier Ziffern eingeben.");
+        input.reportValidity();
+        input.setCustomValidity("");
+        return;
+      }
+      finish(pin);
+    };
+    $("#employeePinDialogCancel").onclick = () => finish(null);
+    $("#employeePinDialogClose").onclick = () => finish(null);
+    dialog.oncancel = (event) => {
+      event.preventDefault();
+      finish(null);
+    };
+    dialog.showModal();
+    setTimeout(() => input.focus(), 50);
+  });
+}
+
 async function clockEmployee(direction) {
   const employeeId = $("#clockEmployeeSelect").value;
   if (!employeeId) return;
+  const employee = employeeForTime(employeeId);
+  if (!employee?.pinConfigured) {
+    showToast("Für diesen Mitarbeiter muss zuerst im Adminbereich eine PIN eingerichtet werden.");
+    return;
+  }
+  let pin = await requestEmployeePin(employee, direction);
+  if (!pin) return;
+  const actionButton = direction === "in" ? $("#clockInButton") : $("#clockOutButton");
+  actionButton.disabled = true;
   try {
     if (localMode) {
+      const enteredHash = await hashLocalEmployeePin(employeeId, pin);
+      if (enteredHash !== employee.pinHash) throw new Error("PIN ist falsch");
       const openEntry = timeEntries.find((entry) => entry.employeeId === employeeId && !entry.clockOut);
       if (direction === "in") {
         if (openEntry) throw new Error("Mitarbeiter ist bereits eingestempelt");
-        const employee = employeeForTime(employeeId);
         timeEntries.unshift({
           id: uid("time"), employeeId, locationId: currentLocationId,
           hourlyRate: Number(employee?.hourlyRate || 0),
@@ -2144,32 +2218,50 @@ async function clockEmployee(direction) {
       persistLocalTimeTracking();
     } else {
       if (!navigator.onLine) throw new Error("Zum Stempeln ist eine Internetverbindung erforderlich.");
-      if (direction === "in") await CloudStore.clockIn(employeeId, currentLocationId);
-      else await CloudStore.clockOut(employeeId);
+      if (direction === "in") await CloudStore.clockIn(employeeId, currentLocationId, pin);
+      else await CloudStore.clockOut(employeeId, pin);
       await reloadTimeTracking();
     }
     renderTimeTracking();
     showToast(direction === "in" ? "Erfolgreich eingestempelt" : "Erfolgreich ausgestempelt");
   } catch (error) {
     showToast(error.message || "Stempeln fehlgeschlagen");
+  } finally {
+    pin = "";
+    renderClockStatus();
   }
 }
 
 async function addEmployee(event) {
   event.preventDefault();
+  const pin = $("#employeePinInput").value.trim();
   const employee = {
     name: $("#employeeNameInput").value.trim(),
     hourlyRate: Number($("#employeeRateInput").value),
-    active: true
+    active: true,
+    pin
   };
   if (!employee.name || !Number.isFinite(employee.hourlyRate) || employee.hourlyRate < 0) return;
+  if (!validEmployeePin(pin)) {
+    showToast("Der Mitarbeiter-PIN muss genau vier Ziffern haben.");
+    return $("#employeePinInput").focus();
+  }
   if (employees.some((item) => item.name.toLowerCase() === employee.name.toLowerCase())) {
     showToast("Mitarbeitername ist bereits vorhanden");
     return;
   }
   try {
     if (localMode) {
-      employees.push({ ...employee, id: uid("employee") });
+      if (await localEmployeeUsesPin(pin)) throw new Error("Dieser PIN ist bereits einem anderen Mitarbeiter zugewiesen");
+      const id = uid("employee");
+      employees.push({
+        id,
+        name: employee.name,
+        hourlyRate: employee.hourlyRate,
+        active: true,
+        pinConfigured: true,
+        pinHash: await hashLocalEmployeePin(id, pin)
+      });
       persistLocalTimeTracking();
     } else {
       await CloudStore.saveEmployee(currentLocationId, employee);
@@ -2205,13 +2297,23 @@ function askRateRecalculation(employee, newRate) {
 
 async function saveExistingEmployee(row) {
   const previousEmployee = employeeForTime(row.dataset.id);
+  const pin = row.querySelector(".employee-edit-pin").value.trim();
   const employee = {
     id: row.dataset.id,
     name: row.querySelector(".employee-edit-name").value.trim(),
     hourlyRate: Number(row.querySelector(".employee-edit-rate").value),
-    active: row.querySelector(".employee-edit-active").checked
+    active: row.querySelector(".employee-edit-active").checked,
+    pin
   };
   if (!employee.name || !Number.isFinite(employee.hourlyRate) || employee.hourlyRate < 0) return;
+  if (pin && !validEmployeePin(pin)) {
+    showToast("Der Mitarbeiter-PIN muss genau vier Ziffern haben.");
+    return row.querySelector(".employee-edit-pin").focus();
+  }
+  if (!previousEmployee?.pinConfigured && !pin) {
+    showToast("Bitte für diesen Mitarbeiter eine vierstellige PIN festlegen.");
+    return row.querySelector(".employee-edit-pin").focus();
+  }
   if (employees.some((item) => item.id !== employee.id && item.name.toLowerCase() === employee.name.toLowerCase())) {
     showToast("Mitarbeitername ist bereits vorhanden");
     return;
@@ -2220,8 +2322,19 @@ async function saveExistingEmployee(row) {
   const recalculatePast = rateChanged ? await askRateRecalculation(previousEmployee, employee.hourlyRate) : false;
   try {
     if (localMode) {
+      if (pin && await localEmployeeUsesPin(pin, employee.id)) {
+        throw new Error("Dieser PIN ist bereits einem anderen Mitarbeiter zugewiesen");
+      }
       const index = employees.findIndex((item) => item.id === employee.id);
-      employees[index] = employee;
+      employees[index] = {
+        ...previousEmployee,
+        id: employee.id,
+        name: employee.name,
+        hourlyRate: employee.hourlyRate,
+        active: employee.active,
+        pinConfigured: Boolean(pin || previousEmployee?.pinConfigured),
+        pinHash: pin ? await hashLocalEmployeePin(employee.id, pin) : previousEmployee?.pinHash
+      };
       if (recalculatePast) {
         const cutoff = new Date();
         cutoff.setMonth(cutoff.getMonth() - 2);
@@ -2921,10 +3034,13 @@ function parseEmployeeRows(sheet) {
     const name = String(row[0] || "").trim();
     const hourlyRate = Number(String(row[1] || "0").replace(",", "."));
     const activeText = String(row[2] ?? "ja").trim().toLowerCase();
+    const rawPin = String(row[3] ?? "").trim();
+    const pin = rawPin ? rawPin.padStart(4, "0") : "";
     return {
       name,
       hourlyRate,
-      active: !["nein", "no", "false", "0", "inaktiv"].includes(activeText)
+      active: !["nein", "no", "false", "0", "inaktiv"].includes(activeText),
+      pin: /^\d{4}$/.test(pin) ? pin : ""
     };
   }).filter((employee) => employee.name && Number.isFinite(employee.hourlyRate) && employee.hourlyRate >= 0);
   if (!rows.length) throw new Error("Keine gültigen Mitarbeiter im Blatt „Mitarbeiter“ gefunden.");
@@ -2932,12 +3048,39 @@ function parseEmployeeRows(sheet) {
 }
 
 async function applyEmployeeImport(importedEmployees) {
-  if (localMode) {
-    importedEmployees.forEach((employee) => {
+  const missingPinNames = importedEmployees
+    .filter((employee) => {
       const existing = employees.find((item) => item.name.toLowerCase() === employee.name.toLowerCase());
-      if (existing) Object.assign(existing, employee);
-      else employees.push({ ...employee, id: uid("employee") });
-    });
+      return !employee.pin && !existing?.pinConfigured;
+    })
+    .map((employee) => employee.name);
+  if (missingPinNames.length) {
+    throw new Error(`PIN fehlt für: ${missingPinNames.join(", ")}. Neue Mitarbeiter benötigen in Spalte „PIN (nur Import)“ vier Ziffern.`);
+  }
+  if (localMode) {
+    for (const employee of importedEmployees) {
+      const existing = employees.find((item) => item.name.toLowerCase() === employee.name.toLowerCase());
+      if (employee.pin && await localEmployeeUsesPin(employee.pin, existing?.id || null)) {
+        throw new Error(`Der PIN für ${employee.name} ist bereits einem anderen Mitarbeiter zugewiesen.`);
+      }
+      if (existing) {
+        Object.assign(existing, { name: employee.name, hourlyRate: employee.hourlyRate, active: employee.active });
+        if (employee.pin) {
+          existing.pinHash = await hashLocalEmployeePin(existing.id, employee.pin);
+          existing.pinConfigured = true;
+        }
+      } else {
+        const id = uid("employee");
+        employees.push({
+          id,
+          name: employee.name,
+          hourlyRate: employee.hourlyRate,
+          active: employee.active,
+          pinConfigured: true,
+          pinHash: await hashLocalEmployeePin(id, employee.pin)
+        });
+      }
+    }
     persistLocalTimeTracking();
   } else {
     for (const employee of importedEmployees) {
@@ -3042,10 +3185,11 @@ function exportAdminExcel() {
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(matrix), "Sortiment");
   }
   if (sections.employees) {
-    const employeeRows = [["Name", "Stundensatz", "Aktiv"], ...employees.map((employee) => [
+    const employeeRows = [["Name", "Stundensatz", "Aktiv", "PIN (nur Import)"], ...employees.map((employee) => [
       employee.name,
       Number(employee.hourlyRate || 0),
-      employee.active === false ? "nein" : "ja"
+      employee.active === false ? "nein" : "ja",
+      ""
     ])];
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(employeeRows), "Mitarbeiter");
   }
