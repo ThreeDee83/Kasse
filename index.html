@@ -4,18 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0b100f">
+  <meta name="application-name" content="OwnCash">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="OwnCash">
   <link rel="manifest" href="manifest.webmanifest">
-  <title>Kassenraum</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png?v=20260825-1">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png?v=20260825-1">
+  <title>OwnCash</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260825-8">
+  <link rel="stylesheet" href="styles.css?v=20260825-9">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
     <form id="loginForm" class="login-card">
-      <span class="brand-mark">K</span>
-      <p class="eyebrow">KASSENRAUM CLOUD</p>
+      <span class="brand-mark"><img src="assets/icons/owncash-192.png" alt="" aria-hidden="true"></span>
+      <p class="eyebrow">OWNCASH CLOUD</p>
       <h1>Anmelden</h1>
       <p>Mit deinem Supabase-Benutzerkonto anmelden.</p>
       <label>E-Mail<input id="loginEmail" type="email" autocomplete="username" required placeholder="name@beispiel.at"></label>
@@ -30,9 +36,9 @@
   <div id="appShell" class="app-shell hidden">
     <header class="topbar">
       <button class="brand" id="brandHome" aria-label="Zur Kasse">
-        <span class="brand-mark">K</span>
+        <span class="brand-mark"><img src="assets/icons/owncash-192.png" alt="" aria-hidden="true"></span>
         <span>
-          <strong>Kassenraum</strong>
+          <strong>OwnCash</strong>
           <small>Verkaufspunkt</small>
         </span>
       </button>
@@ -598,7 +604,8 @@
   <script src="config.js?v=20260722-6"></script>
   <script src="cloud.js?v=20260825-8"></script>
   <script src="xlsx-export.js?v=20260825-7"></script>
+  <script src="submitted-report-export.js?v=20260825-2"></script>
   <script src="pdf-export.js?v=20260825-2"></script>
-  <script src="app.js?v=20260825-8"></script>
+  <script src="app.js?v=20260825-10"></script>
 </body>
 </html>

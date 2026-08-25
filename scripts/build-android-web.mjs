@@ -13,6 +13,7 @@ const runtimeFiles = [
   "cloud.js",
   "config.js",
   "xlsx-export.js",
+  "submitted-report-export.js",
   "pdf-export.js",
   "manifest.webmanifest",
   "sw.js"

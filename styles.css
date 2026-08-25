@@ -67,6 +67,7 @@ body[data-theme="light"] .cart-footer { background: #fbfaf6; }
 }
 .brand { display: flex; align-items: center; gap: 11px; border: 0; background: none; padding: 0; cursor: pointer; text-align: left; }
 .brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: var(--green); color: #07130f; font: 800 19px/1 Manrope; box-shadow: 0 0 28px rgba(61,212,163,.18); }
+.brand-mark img { display: block; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .brand strong { display: block; font: 800 16px/1.15 Manrope; letter-spacing: -.3px; }
 .brand small { color: var(--muted); font-size: 11px; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }

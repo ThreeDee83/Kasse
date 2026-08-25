@@ -1410,6 +1410,16 @@ function submittedReportCatalog(report) {
   return report.catalog?.categories && report.catalog?.products ? report.catalog : data;
 }
 
+function submittedReportBondDateLabel(report) {
+  const bondDateKeys = globalThis.SubmittedReportExport?.bondDateKeysForReport(report) || [];
+  if (bondDateKeys.length === 1) return formatDateKey(bondDateKeys[0]);
+  if (bondDateKeys.length > 1) {
+    return `${formatDateKey(bondDateKeys[0])} – ${formatDateKey(bondDateKeys[bondDateKeys.length - 1])}`;
+  }
+  const fallbackDateKey = report.business_date || report.businessDate;
+  return fallbackDateKey ? formatDateKey(fallbackDateKey) : "–";
+}
+
 function downloadSubmittedReport(report) {
   const dateKey = report.business_date || report.businessDate;
   const locationName = submittedReportLocationName(report);
@@ -1428,37 +1438,50 @@ function downloadAllSubmittedReports() {
     showToast("Noch keine Abrechnungen übermittelt");
     return;
   }
-  const dailyReports = submittedReports.filter((report) => submittedReportType(report) === "daily");
-  const ordered = [...dailyReports].sort((a, b) =>
-    String(a.business_date || a.businessDate).localeCompare(String(b.business_date || b.businessDate))
-  );
-  if (!ordered.length) {
-    showToast("Noch keine Tagesabrechnungen übermittelt");
+  if (!globalThis.SubmittedReportExport) {
+    showToast("Gesamtabrechnung konnte nicht vorbereitet werden");
     return;
   }
-  const sheets = ordered.map((report) => {
-    const dateKey = report.business_date || report.businessDate;
-    const locationName = submittedReportLocationName(report);
-    return buildSubmittedReportSheet(submittedReportSales(report), submittedReportCatalog(report), {
-      dateLabel: formatDateKey(dateKey),
-      sheetName: `${locationName} ${dateKey.slice(5)}`,
-      cashBalance: report.cash_balance ?? report.cashBalance,
-      locationName
+  const groups = globalThis.SubmittedReportExport.groupSubmittedReports(submittedReports);
+  if (!groups.length) {
+    showToast("In den übermittelten Abrechnungen sind keine Bons vorhanden");
+    return;
+  }
+  const usedSheetNames = new Set(["gesamtabrechnung"]);
+  const sheets = groups.map((group) => {
+    const datePart = `${group.dateKey.slice(8, 10)}.${group.dateKey.slice(5, 7)}`;
+    const cleanLocationName = String(group.locationName || "Standort")
+      .replace(/[\\/?*[\]:]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const baseName = `${datePart} ${cleanLocationName}`.slice(0, 31).trim() || datePart;
+    let sheetName = baseName;
+    let suffix = 2;
+    while (usedSheetNames.has(sheetName.toLocaleLowerCase("de"))) {
+      const suffixText = ` ${suffix++}`;
+      sheetName = `${baseName.slice(0, 31 - suffixText.length).trim()}${suffixText}`;
+    }
+    usedSheetNames.add(sheetName.toLocaleLowerCase("de"));
+    return buildSubmittedReportSheet(group.sales, data, {
+      dateLabel: formatDateKey(group.dateKey),
+      sheetName,
+      cashBalance: group.cashBalance,
+      locationName: group.locationName || "Standort"
     });
   });
-  const allSales = ordered.flatMap((report) => submittedReportSales(report));
-  const cashValues = ordered
-    .map((report) => Number(report.cash_balance ?? report.cashBalance))
-    .filter(Number.isFinite);
+  const allSales = groups.flatMap((group) => group.sales);
+  const cashValues = groups.map((group) => group.cashBalance).filter(Number.isFinite);
   const totalCash = cashValues.length ? cashValues.reduce((sum, value) => sum + value, 0) : null;
+  const allLocationNames = [...new Set(groups.map((group) => group.locationName).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "de"));
   sheets.push(buildSubmittedReportSheet(allSales, data, {
     dateLabel: "Gesamtabrechnung",
     sheetName: "Gesamtabrechnung",
     cashBalance: totalCash,
-    locationName: "Alle Standorte"
+    locationName: allLocationNames.join(", ") || "Alle Standorte"
   }));
   XlsxExport.downloadWorkbook({ sheets }, "Gesamtabrechnung_Übermittelt.xlsx");
-  showToast("Gesamtabrechnung wurde erstellt");
+  showToast(`${groups.length} Tages-/Standortblätter und eine Gesamtabrechnung wurden erstellt`);
 }
 
 async function refreshSubmittedReports() {
@@ -1688,9 +1711,8 @@ function renderSubmittedReports() {
   body.innerHTML = submittedReports.map((report) => {
     const reportSales = submittedReportSales(report);
     const summary = aggregateSales(reportSales);
-    const dateKey = report.business_date || report.businessDate;
     const submittedAt = report.submitted_at || report.submittedAt;
-    const reportLabel = submittedReportType(report) === "total" ? "Gesamtabrechnung" : formatDateKey(dateKey);
+    const reportLabel = submittedReportBondDateLabel(report);
     return `<tr>
       <td><strong>${escapeHtml(reportLabel)}</strong></td>
       <td>${escapeHtml(submittedReportLocationName(report))}</td>
