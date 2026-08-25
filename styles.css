@@ -17,9 +17,11 @@
 }
 
 * { box-sizing: border-box; }
+html, body { touch-action: manipulation; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select { font: inherit; }
 button { color: inherit; }
+button, a, input, select, textarea, label { touch-action: manipulation; }
 .hidden { display: none !important; }
 
 body[data-theme="light"] {
