@@ -30,6 +30,7 @@ await cp(join(projectRoot, "assets"), join(outputDir, "assets"), { recursive: tr
 const vendorFiles = [
   ["node_modules/@supabase/supabase-js/dist/umd/supabase.js", "vendor/supabase.js"],
   ["node_modules/xlsx/dist/xlsx.full.min.js", "vendor/xlsx.full.min.js"],
+  ["node_modules/bcryptjs/dist/bcrypt.min.js", "vendor/bcrypt.min.js"],
   ["node_modules/pdf-lib/dist/pdf-lib.min.js", "vendor/pdf-lib.min.js"]
 ];
 for (const [source, target] of vendorFiles) {
@@ -41,6 +42,7 @@ const indexPath = join(outputDir, "index.html");
 const nativeIndex = (await readFile(indexPath, "utf8"))
   .replace("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2", "vendor/supabase.js")
   .replace("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js", "vendor/xlsx.full.min.js")
+  .replace("https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js", "vendor/bcrypt.min.js")
   .replace("https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js", "vendor/pdf-lib.min.js");
 await writeFile(indexPath, nativeIndex, "utf8");
 

@@ -12,7 +12,16 @@
 
   function enqueue(action) {
     const queue = JSON.parse(localStorage.getItem(queueKey) || "[]");
-    queue.push({ ...action, queuedAt: new Date().toISOString() });
+    const queuedAction = { ...action, queuedAt: new Date().toISOString() };
+    if (action.type === "offlineTimeEntry" && action.entry?.id) {
+      const existingIndex = queue.findIndex((entry) =>
+        entry.type === "offlineTimeEntry" && entry.entry?.id === action.entry.id
+      );
+      if (existingIndex >= 0) queue[existingIndex] = queuedAction;
+      else queue.push(queuedAction);
+    } else {
+      queue.push(queuedAction);
+    }
     localStorage.setItem(queueKey, JSON.stringify(queue));
   }
 
@@ -45,9 +54,24 @@
         .from("location_state")
         .upsert(rows, { onConflict: "location_id" });
     }
+    if (action.type === "offlineTimeEntry") {
+      const entry = action.entry || {};
+      return client.rpc("sync_offline_time_entry", {
+        target_entry: entry.id,
+        target_employee: entry.employeeId,
+        target_location: entry.locationId,
+        entry_clock_in: entry.clockIn,
+        entry_clock_out: entry.clockOut || null,
+        entry_note: entry.note || ""
+      });
+    }
   }
 
   async function queued(action) {
+    if (!navigator.onLine) {
+      enqueue(action);
+      return { queued: true };
+    }
     try {
       const result = await run(action);
       if (result?.error) throw result.error;
@@ -72,6 +96,13 @@
       }
     }
     localStorage.setItem(queueKey, JSON.stringify(remaining));
+    const synced = queue.length - remaining.length;
+    if (queue.length && typeof global.CustomEvent === "function" && typeof global.dispatchEvent === "function") {
+      global.dispatchEvent(new CustomEvent("owncash-sync-complete", {
+        detail: { synced, remaining: remaining.length }
+      }));
+    }
+    return { synced, remaining: remaining.length };
   }
 
   async function signIn(email, password) {
@@ -264,6 +295,11 @@
     return queued({ type: "cash", locationId, dateKey, balance });
   }
 
+  function queueOfflineTimeEntry(entry) {
+    enqueue({ type: "offlineTimeEntry", entry });
+    return { queued: true };
+  }
+
   async function deleteCash(locationId, dateKey) {
     if (!client) return;
     return client.from("cash_balances").delete().eq("location_id", locationId).eq("date_key", dateKey);
@@ -312,18 +348,22 @@
   }
 
   async function loadTimeTracking() {
-    const [employeesResult, entriesResult, bonusesResult] = await Promise.all([
+    const [employeesResult, entriesResult, bonusesResult, pinHashesResult] = await Promise.all([
       client.from("employees").select("id,location_id,name,hourly_rate,active,created_at,pin_configured").order("name"),
       client.from("time_entries").select("*").order("clock_in", { ascending: false }),
-      client.from("employee_bonuses").select("*").order("date_key", { ascending: false })
+      client.from("employee_bonuses").select("*").order("date_key", { ascending: false }),
+      client.rpc("load_offline_employee_pin_hashes")
     ]);
     if (employeesResult.error) throw employeesResult.error;
     if (entriesResult.error) throw entriesResult.error;
     if (bonusesResult.error && bonusesResult.error.code !== "42501") throw bonusesResult.error;
+    const pinHashFunctionMissing = ["42883", "PGRST202"].includes(pinHashesResult.error?.code);
+    if (pinHashesResult.error && !pinHashFunctionMissing) throw pinHashesResult.error;
     return {
       employees: employeesResult.data || [],
       timeEntries: entriesResult.data || [],
-      bonuses: bonusesResult.data || []
+      bonuses: bonusesResult.data || [],
+      pinHashes: pinHashFunctionMissing ? [] : (pinHashesResult.data || [])
     };
   }
 
@@ -444,7 +484,7 @@
 
   global.CloudStore = {
     configured, client, signIn, signOut, session, locations, adminLocations, createLocation, deleteLocation, updateLocation, ensureAdminAccess, loadLocation, loadReportsForLocations,
-    saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncMasterData, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, deleteCash, deleteSales,
+    saveState, saveCatalogToLocations, overwriteCatalogToLocations, syncCatalogToAllLocations, syncMasterData, syncLocationMemberships, insertSale, saveSale, deleteSale, deleteSalesByIds, saveCash, queueOfflineTimeEntry, deleteCash, deleteSales,
     submitReport, loadSubmittedReports, deleteSubmittedReport,
     loadTimeTracking, clockIn, clockOut, saveEmployee, syncEmployees, deleteEmployee, addTimeEntry, updateTimeEntry, deleteTimeEntry, saveBonus, deleteBonus, deleteTimeTracking,
     subscribe, flushQueue

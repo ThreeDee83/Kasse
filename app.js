@@ -1,5 +1,8 @@
 const COLORS = ["#C85C4A", "#D58C32", "#D2AE3F", "#5A8B62", "#3F8177", "#4B78A8", "#7466A6", "#A45C82"];
 const STANDARD_LOCATION_NAMES = ["Punschhütte", "Bar"];
+const CLOUD_SESSION_CACHE_KEY = "owncash-cloud-session-cache";
+const OFFLINE_PIN_VERIFIERS_KEY = "owncash-offline-pin-verifiers";
+const OFFLINE_PIN_ITERATIONS = 180000;
 const DEFAULT_DATA = {
   categories: [
     { id: "cat-coffee", name: "Kaffee", color: "#C85C4A" },
@@ -199,6 +202,54 @@ function normalizeLocationList(list) {
   return prepared;
 }
 
+function readCachedCloudSession() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(CLOUD_SESSION_CACHE_KEY) || "null");
+    const cachedLocations = normalizeLocationList(cached?.locations);
+    if (!cached?.userId || !cachedLocations.length) return null;
+    return { ...cached, locations: cachedLocations };
+  } catch (_) {
+    return null;
+  }
+}
+
+function persistCloudSessionCache() {
+  if (!currentUserId || !locations.length || localMode) return;
+  localStorage.setItem(CLOUD_SESSION_CACHE_KEY, JSON.stringify({
+    userId: currentUserId,
+    email: currentUserEmail,
+    currentLocationId,
+    currentRole,
+    locations,
+    cachedAt: new Date().toISOString()
+  }));
+}
+
+async function startOfflineSession(session = null) {
+  const cached = readCachedCloudSession();
+  if (!cached) return false;
+  if (session?.user?.id && session.user.id !== cached.userId) return false;
+  localMode = false;
+  currentUserId = session?.user?.id || cached.userId;
+  currentUserEmail = session?.user?.email || cached.email || "";
+  locations = cached.locations;
+  const preferred = locations.some((location) => location.id === cached.currentLocationId)
+    ? cached.currentLocationId
+    : locations[0].id;
+  currentLocationId = preferred;
+  currentRole = locations.find((location) => location.id === preferred)?.role || cached.currentRole || "staff";
+  localStorage.setItem("kassenraum-current-location", currentLocationId);
+  loadLocalLocation(currentLocationId);
+  $("#currentUserLabel").textContent = `${currentUserEmail || "Gespeichertes Konto"} · Offline`;
+  showApplication();
+  selectInitialCategory();
+  renderAll();
+  renderTimeTracking();
+  startAutomaticReportSubmission();
+  showToast("Offline gestartet – lokaler Datenstand");
+  return true;
+}
+
 function renderAll() {
   applyTheme();
   renderRoleAccess();
@@ -273,7 +324,7 @@ function loadLocalLocation(locationId) {
   };
   employees = readGlobal("kassenraum-employees-global", read("kassenraum-employees", [])).map((employee) => ({
     ...employee,
-    pinConfigured: Boolean(employee.pinConfigured && employee.pinHash)
+    pinConfigured: Boolean(employee.pinConfigured)
   }));
   timeEntries = readGlobal("kassenraum-time-entries-global", read("kassenraum-time-entries", []))
     .map((entry) => ({
@@ -297,6 +348,7 @@ async function refreshLocationMemberships() {
       return;
     }
     currentRole = currentLocation.role || "staff";
+    persistCloudSessionCache();
     renderAll();
     showToast("Standorte wurden aktualisiert");
   } catch (_) {}
@@ -308,6 +360,7 @@ async function switchLocation(locationId, background = false) {
   currentLocationId = locationId;
   currentRole = location.role || (localMode ? "admin" : "staff");
   localStorage.setItem("kassenraum-current-location", locationId);
+  if (!localMode) persistCloudSessionCache();
   if (localMode) {
     loadLocalLocation(locationId);
     renderAll();
@@ -383,7 +436,10 @@ async function switchLocation(locationId, background = false) {
 
 async function startCloudSession() {
   const session = await CloudStore.session();
-  if (!session) return false;
+  if (!session) {
+    if (!navigator.onLine) return startOfflineSession();
+    return false;
+  }
   currentUserId = session.user.id;
   currentUserEmail = session.user.email || "";
   if (currentUserEmail.toLocaleLowerCase("de") === "admin@standl.at") {
@@ -391,7 +447,12 @@ async function startCloudSession() {
       await CloudStore.ensureAdminAccess();
     } catch (_) {}
   }
-  locations = normalizeLocationList(await CloudStore.locations());
+  try {
+    locations = normalizeLocationList(await CloudStore.locations());
+  } catch (error) {
+    if (await startOfflineSession(session)) return true;
+    throw error;
+  }
   if (!locations.length) {
     await CloudStore.createLocation("Punschhütte");
     await CloudStore.createLocation("Bar");
@@ -408,6 +469,7 @@ async function startCloudSession() {
       currentRole = locations.find((location) => location.id === preferred)?.role || currentRole;
     } catch (_) {}
   }
+  persistCloudSessionCache();
   $("#currentUserLabel").textContent = session.user.email || "Supabase-Konto";
   showApplication();
   await switchLocation(preferred);
@@ -1905,6 +1967,8 @@ function normalizeTimeTracking(remote) {
     amount: Number(bonus.amount || 0),
     note: bonus.note || ""
   }));
+  cacheServerOfflinePinHashes(remote.pinHashes || []);
+  persistLocalTimeTracking();
 }
 
 async function reloadTimeTracking() {
@@ -2154,6 +2218,98 @@ function validEmployeePin(pin) {
   return /^\d{4}$/.test(String(pin || ""));
 }
 
+function readOfflinePinVerifiers() {
+  try {
+    const value = JSON.parse(localStorage.getItem(OFFLINE_PIN_VERIFIERS_KEY) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeOfflinePinVerifiers(verifiers) {
+  localStorage.setItem(OFFLINE_PIN_VERIFIERS_KEY, JSON.stringify(verifiers));
+}
+
+function cacheServerOfflinePinHashes(rows) {
+  if (!rows.length) return;
+  const verifiers = readOfflinePinVerifiers();
+  rows.forEach((row) => {
+    const employeeId = String(row.employee_id || row.employeeId || "");
+    const hash = String(row.pin_hash || row.pinHash || "");
+    if (employeeId && /^\$2[aby]\$/.test(hash)) {
+      verifiers[employeeId] = { type: "bcrypt", hash, updatedAt: new Date().toISOString() };
+    }
+  });
+  writeOfflinePinVerifiers(verifiers);
+}
+
+function bytesToBase64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function base64ToBytes(value) {
+  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+}
+
+async function deriveOfflinePinHash(employeeId, pin, salt, iterations) {
+  if (!globalThis.crypto?.subtle) throw new Error("PIN-Prüfung ist auf diesem Gerät nicht verfügbar.");
+  const key = await globalThis.crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(pin),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const employeeSalt = new TextEncoder().encode(`owncash:${employeeId}:`);
+  const randomSalt = base64ToBytes(salt);
+  const combinedSalt = new Uint8Array(employeeSalt.length + randomSalt.length);
+  combinedSalt.set(employeeSalt);
+  combinedSalt.set(randomSalt, employeeSalt.length);
+  const bits = await globalThis.crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt: combinedSalt, iterations },
+    key,
+    256
+  );
+  return bytesToBase64(new Uint8Array(bits));
+}
+
+async function cacheOfflinePinFromSuccessfulOnline(employeeId, pin) {
+  const saltBytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(saltBytes);
+  const salt = bytesToBase64(saltBytes);
+  const hash = await deriveOfflinePinHash(employeeId, pin, salt, OFFLINE_PIN_ITERATIONS);
+  const verifiers = readOfflinePinVerifiers();
+  verifiers[employeeId] = {
+    type: "pbkdf2",
+    salt,
+    iterations: OFFLINE_PIN_ITERATIONS,
+    hash,
+    updatedAt: new Date().toISOString()
+  };
+  writeOfflinePinVerifiers(verifiers);
+}
+
+async function verifyOfflineEmployeePin(employeeId, pin) {
+  const verifier = readOfflinePinVerifiers()[employeeId];
+  if (!verifier) return null;
+  if (verifier.type === "bcrypt") {
+    const bcrypt = globalThis.dcodeIO?.bcrypt;
+    if (!bcrypt?.compareSync) throw new Error("Offline-PIN-Bibliothek ist nicht verfügbar.");
+    return bcrypt.compareSync(pin, verifier.hash);
+  }
+  if (verifier.type === "pbkdf2") {
+    const hash = await deriveOfflinePinHash(employeeId, pin, verifier.salt, Number(verifier.iterations || OFFLINE_PIN_ITERATIONS));
+    const expected = base64ToBytes(verifier.hash);
+    const actual = base64ToBytes(hash);
+    if (expected.length !== actual.length) return false;
+    let difference = 0;
+    expected.forEach((value, index) => { difference |= value ^ actual[index]; });
+    return difference === 0;
+  }
+  return null;
+}
+
 async function hashLocalEmployeePin(employeeId, pin) {
   if (!globalThis.crypto?.subtle) throw new Error("PIN-Verschlüsselung ist in diesem Browser nicht verfügbar.");
   const bytes = new TextEncoder().encode(`owncash:${employeeId}:${pin}`);
@@ -2209,6 +2365,51 @@ function requestEmployeePin(employee, direction) {
   });
 }
 
+function newOfflineTimeEntryId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function isConnectivityError(error) {
+  const message = String(error?.message || error || "").toLocaleLowerCase("de");
+  return !navigator.onLine || /network|fetch|offline|verbindung|failed to load/.test(message);
+}
+
+async function recordOfflineClock(direction, employee, pin) {
+  const pinValid = await verifyOfflineEmployeePin(employee.id, pin);
+  if (pinValid === null) {
+    throw new Error("Diese PIN ist auf diesem Gerät noch nicht offline verfügbar. Bitte einmal online stempeln.");
+  }
+  if (!pinValid) throw new Error("PIN ist falsch");
+  const openEntry = timeEntries.find((entry) => entry.employeeId === employee.id && !entry.clockOut);
+  if (direction === "in") {
+    if (openEntry) throw new Error("Mitarbeiter ist bereits eingestempelt");
+    const entry = {
+      id: newOfflineTimeEntryId(),
+      employeeId: employee.id,
+      locationId: currentLocationId,
+      hourlyRate: Number(employee.hourlyRate || 0),
+      clockIn: new Date().toISOString(),
+      clockOut: null,
+      note: "",
+      syncPending: true
+    };
+    timeEntries.unshift(entry);
+    CloudStore.queueOfflineTimeEntry(entry);
+  } else {
+    if (!openEntry) throw new Error("Mitarbeiter ist nicht eingestempelt");
+    openEntry.clockOut = new Date().toISOString();
+    openEntry.syncPending = true;
+    CloudStore.queueOfflineTimeEntry(openEntry);
+  }
+  persistLocalTimeTracking();
+}
+
 async function clockEmployee(direction) {
   const employeeId = $("#clockEmployeeSelect").value;
   if (!employeeId) return;
@@ -2221,6 +2422,7 @@ async function clockEmployee(direction) {
   if (!pin) return;
   const actionButton = direction === "in" ? $("#clockInButton") : $("#clockOutButton");
   actionButton.disabled = true;
+  let queuedOffline = false;
   try {
     if (localMode) {
       const enteredHash = await hashLocalEmployeePin(employeeId, pin);
@@ -2239,13 +2441,26 @@ async function clockEmployee(direction) {
       }
       persistLocalTimeTracking();
     } else {
-      if (!navigator.onLine) throw new Error("Zum Stempeln ist eine Internetverbindung erforderlich.");
-      if (direction === "in") await CloudStore.clockIn(employeeId, currentLocationId, pin);
-      else await CloudStore.clockOut(employeeId, pin);
-      await reloadTimeTracking();
+      if (!navigator.onLine) {
+        await recordOfflineClock(direction, employee, pin);
+        queuedOffline = true;
+      } else {
+        try {
+          if (direction === "in") await CloudStore.clockIn(employeeId, currentLocationId, pin);
+          else await CloudStore.clockOut(employeeId, pin);
+          await cacheOfflinePinFromSuccessfulOnline(employeeId, pin);
+          await reloadTimeTracking();
+        } catch (error) {
+          if (!isConnectivityError(error)) throw error;
+          await recordOfflineClock(direction, employee, pin);
+          queuedOffline = true;
+        }
+      }
     }
     renderTimeTracking();
-    showToast(direction === "in" ? "Erfolgreich eingestempelt" : "Erfolgreich ausgestempelt");
+    showToast(queuedOffline
+      ? (direction === "in" ? "Offline eingestempelt – Synchronisierung vorgemerkt" : "Offline ausgestempelt – Synchronisierung vorgemerkt")
+      : (direction === "in" ? "Erfolgreich eingestempelt" : "Erfolgreich ausgestempelt"));
   } catch (error) {
     showToast(error.message || "Stempeln fehlgeschlagen");
   } finally {
@@ -2286,7 +2501,8 @@ async function addEmployee(event) {
       });
       persistLocalTimeTracking();
     } else {
-      await CloudStore.saveEmployee(currentLocationId, employee);
+      const savedEmployeeId = await CloudStore.saveEmployee(currentLocationId, employee);
+      await cacheOfflinePinFromSuccessfulOnline(savedEmployeeId, pin);
       await reloadTimeTracking();
     }
     $("#addEmployeeForm").reset();
@@ -2367,6 +2583,7 @@ async function saveExistingEmployee(row) {
       persistLocalTimeTracking();
     } else {
       await CloudStore.saveEmployee(currentLocationId, employee, recalculatePast);
+      if (pin) await cacheOfflinePinFromSuccessfulOnline(employee.id, pin);
       await reloadTimeTracking();
     }
     renderTimeTracking();
@@ -3107,7 +3324,8 @@ async function applyEmployeeImport(importedEmployees) {
   } else {
     for (const employee of importedEmployees) {
       const existing = employees.find((item) => item.name.toLowerCase() === employee.name.toLowerCase());
-      await CloudStore.saveEmployee(currentLocationId, existing ? { ...employee, id: existing.id } : employee);
+      const savedEmployeeId = await CloudStore.saveEmployee(currentLocationId, existing ? { ...employee, id: existing.id } : employee);
+      if (employee.pin) await cacheOfflinePinFromSuccessfulOnline(savedEmployeeId, employee.pin);
     }
     await reloadTimeTracking();
   }
@@ -3463,6 +3681,7 @@ async function logout() {
   localMode = false;
   currentUserId = "";
   currentUserEmail = "";
+  localStorage.removeItem(CLOUD_SESSION_CACHE_KEY);
   $("#appShell").classList.add("hidden");
   $("#settingsView").classList.add("hidden");
   $("#reportsView").classList.add("hidden");
@@ -3744,9 +3963,32 @@ async function boot() {
   try {
     await startCloudSession();
   } catch (error) {
+    if (await startOfflineSession()) return;
     $("#loginError").textContent = error.message || "Verbindung zu Supabase fehlgeschlagen.";
     $("#loginError").classList.remove("hidden");
   }
 }
+
+globalThis.addEventListener("owncash-sync-complete", async (event) => {
+  if (!localMode && currentUserId) {
+    await reloadTimeTracking();
+    showToast(event.detail?.remaining
+      ? `${event.detail.synced} Offline-Vorgänge synchronisiert, ${event.detail.remaining} noch offen`
+      : `${event.detail?.synced || 0} Offline-Vorgänge synchronisiert`);
+  }
+});
+
+globalThis.addEventListener("online", async () => {
+  if (localMode || !readCachedCloudSession()) return;
+  try {
+    await startCloudSession();
+  } catch (_) {}
+});
+
+globalThis.addEventListener("offline", () => {
+  if (localMode || !currentUserId) return;
+  $("#currentUserLabel").textContent = `${currentUserEmail || "Gespeichertes Konto"} · Offline`;
+  showToast("Offline – Änderungen werden lokal gespeichert");
+});
 
 boot();

@@ -4,7 +4,9 @@
   "private": true,
   "description": "OwnCash Web-App und interne Android-Kassen-App",
   "scripts": {
-    "build:android-web": "node scripts/build-android-web.mjs",
+    "build:web-vendor": "node scripts/build-web-vendor.mjs",
+    "build:android-web": "npm run build:web-vendor && node scripts/build-android-web.mjs",
+    "test:offline": "node scripts/test-offline-cloud.mjs && node scripts/test-offline-assets.mjs",
     "android:sync": "npm run build:android-web && cap sync android",
     "android:open": "npm run android:sync && cap open android",
     "android:debug": "npm run android:sync && cd android && gradlew.bat assembleDebug",
@@ -14,6 +16,7 @@
     "@capacitor/android": "^8.5.0",
     "@capacitor/core": "^8.5.0",
     "@supabase/supabase-js": "^2.112.4",
+    "bcryptjs": "2.4.3",
     "pdf-lib": "1.17.1",
     "xlsx": "0.18.5"
   },
