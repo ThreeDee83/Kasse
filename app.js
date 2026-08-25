@@ -496,19 +496,17 @@ function renderProducts() {
   });
   const selected = categoryFor(selectedCategory);
   const productGrid = $("#productGrid");
-  const tabletColumns = filtered.length <= 6 ? 3 : filtered.length <= 12 ? 4 : filtered.length <= 20 ? 5 : 6;
+  const tabletMaxColumns = window.innerWidth <= 1100 ? 6 : 7;
+  const tabletColumns = Math.min(tabletMaxColumns, Math.max(3, Math.ceil(filtered.length / 5)));
   const tabletRows = Math.max(1, Math.ceil(filtered.length / tabletColumns));
   productGrid.style.setProperty("--tablet-product-columns", tabletColumns);
   productGrid.style.setProperty("--tablet-product-rows", tabletRows);
-  productGrid.dataset.density = filtered.length > 24 ? "very-dense" : filtered.length > 16 ? "dense" : "normal";
+  productGrid.style.setProperty("--tablet-grid-height", `${tabletRows * 68 + Math.max(0, tabletRows - 1) * 8}px`);
   $("#productTitle").textContent = selected ? selected.name : "Alle Artikel";
   productGrid.innerHTML = filtered.map((product) => {
     const category = categoryFor(product.categoryId) || { name: "Ohne Kategorie", color: "#777" };
-    return `<button class="product-card" data-id="${product.id}" style="--card-color:${category.color}">
-      <span class="product-category"><i></i>${escapeHtml(category.name)}</span>
+    return `<button class="product-card" data-id="${product.id}" style="--card-color:${category.color}" aria-label="${escapeHtml(product.name)} zum Beleg hinzufügen">
       <strong>${escapeHtml(product.name)}</strong>
-      <span class="product-price">${euro(product.price)}</span>
-      <span class="product-add">+</span>
     </button>`;
   }).join("");
   $("#emptyProducts").classList.toggle("hidden", filtered.length > 0);
