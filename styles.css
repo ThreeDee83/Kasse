@@ -959,10 +959,11 @@ dialog::backdrop { background: rgba(3,7,6,.76); backdrop-filter: blur(5px); }
     padding: 8px 10px;
   }
   .search-box input { font-size: 14px; }
-  .product-grid {
+  .product-grid,
+  body.staff-mode .product-grid {
     height: auto;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-rows: none;
     grid-auto-rows: minmax(66px, auto);
     gap: 6px;
