@@ -33,8 +33,13 @@ assert.equal(bcrypt.compareSync("4321", sampleHash), false);
 
 const kdsHtml = await readFile("kds/index.html", "utf8");
 assert.equal(/<script[^>]+src="https?:\/\//i.test(kdsHtml), false, "Das KDS darf keine CDN-Skripte benötigen");
+assert.doesNotMatch(kdsHtml, /completeForm|pagerInput/, "Das KDS darf keine zentrale Pager-Fertigmeldung mehr enthalten");
+assert.match(kdsHtml, /clearHistoryButton/, "Im erledigten Verlauf fehlt die Löschfunktion");
 for (const path of ["kds/kds.js", "kds/kds.css", "kds/sw.js", "kds-order.js"]) {
   assert.equal(existsSync(path), true, `Fehlende KDS-Datei: ${path}`);
 }
+const kdsScript = await readFile("kds/kds.js", "utf8");
+assert.match(kdsScript, /currentView === "open"[\s\S]*complete-order-button/, "Offene KDS-Karten benötigen einen Erledigt-Button");
+assert.match(kdsScript, /60 \* 60 \* 1000/, "Die automatische einstündige KDS-Aufbewahrung fehlt");
 
 console.log("Offline-Assets und bcrypt-PIN-Prüfung erfolgreich geprüft.");

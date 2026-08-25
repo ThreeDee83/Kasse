@@ -12,7 +12,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="../assets/icons/apple-touch-icon.png">
   <title>OwnCash KDS</title>
-  <link rel="stylesheet" href="kds.css?v=20260825-3">
+  <link rel="stylesheet" href="kds.css?v=20260825-4">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -42,26 +42,18 @@
     </header>
 
     <main>
-      <section class="completion-panel">
-        <form id="completeForm">
-          <label for="pagerInput">Pager fertigmelden</label>
-          <div class="completion-entry">
-            <input id="pagerInput" type="text" inputmode="numeric" pattern="[0-9]{1,6}" maxlength="6" autocomplete="off" placeholder="Pager-Nr." required>
-            <button type="submit">Erledigt</button>
-          </div>
-          <small>Pager-Nummer eingeben und mit Enter bestätigen.</small>
-          <p id="completionMessage" class="completion-message" aria-live="polite"></p>
-        </form>
-      </section>
-
       <section class="orders-section">
         <div class="orders-toolbar">
           <div class="view-tabs" role="tablist">
             <button class="view-tab active" data-view="open" type="button">Offen <span id="openCount">0</span></button>
             <button class="view-tab" data-view="done" type="button">Erledigt <span id="doneCount">0</span></button>
           </div>
-          <button id="refreshButton" class="quiet-button" type="button">Aktualisieren</button>
+          <div class="toolbar-actions">
+            <button id="clearHistoryButton" class="danger-button hidden" type="button">Verlauf löschen</button>
+            <button id="refreshButton" class="quiet-button" type="button">Aktualisieren</button>
+          </div>
         </div>
+        <p id="completionMessage" class="completion-message" aria-live="polite"></p>
         <div id="ordersGrid" class="orders-grid" aria-live="polite"></div>
         <div id="emptyState" class="empty-state hidden"></div>
       </section>
@@ -71,6 +63,6 @@
   <script src="../vendor/supabase.js?v=2.112.4"></script>
   <script src="../config.js"></script>
   <script src="../kds-order.js?v=20260825-2"></script>
-  <script src="kds.js?v=20260825-4"></script>
+  <script src="kds.js?v=20260825-5"></script>
 </body>
 </html>

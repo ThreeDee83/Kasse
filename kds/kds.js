@@ -30,6 +30,7 @@
   let currentView = "open";
   let channel = null;
   let refreshTimer = null;
+  let lastCleanupAt = 0;
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => ({
@@ -87,6 +88,7 @@
     $("#openCount").textContent = openOrders.length;
     $("#doneCount").textContent = doneOrders.length;
     $$(".view-tab").forEach((button) => button.classList.toggle("active", button.dataset.view === currentView));
+    $("#clearHistoryButton").classList.toggle("hidden", currentView !== "done" || doneOrders.length === 0);
     const grid = $("#ordersGrid");
     const empty = $("#emptyState");
     if (!orders.length) {
@@ -113,7 +115,7 @@
           <span class="item-quantity">${escapeHtml(Number(item.quantity || 0))}×</span>
           <span class="item-name">${escapeHtml(item.name || "Artikel")}</span>
         </li>`).join("")}</ul>
-        ${currentView === "open" && !hasPager ? `<div class="order-actions"><button class="complete-order-button" type="button" data-id="${escapeHtml(order.id)}">Bestellung erledigt</button></div>` : ""}
+        ${currentView === "open" ? `<div class="order-actions"><button class="complete-order-button" type="button" data-id="${escapeHtml(order.id)}">Erledigt</button></div>` : ""}
       </article>`;
     }).join("");
     $$(".complete-order-button").forEach((button) => button.addEventListener("click", () => {
@@ -121,19 +123,53 @@
     }));
   }
 
+  async function cleanupExpiredOrders(force = false) {
+    if (!client || !currentLocationId || !navigator.onLine) return;
+    if (!force && Date.now() - lastCleanupAt < 60000) return;
+    const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { error } = await client.from("kds_orders").delete()
+      .eq("location_id", currentLocationId)
+      .not("completed_at", "is", null)
+      .lt("completed_at", cutoff);
+    if (error) throw error;
+    lastCleanupAt = Date.now();
+  }
+
   async function loadOrders() {
     if (!client || !currentLocationId) return;
+    await cleanupExpiredOrders().catch((error) => console.warn("KDS-Verlauf konnte nicht automatisch bereinigt werden:", error));
+    const historyCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const [openResult, doneResult] = await Promise.all([
       client.from("kds_orders").select("*").eq("location_id", currentLocationId)
         .is("completed_at", null).order("received_at", { ascending: true }),
       client.from("kds_orders").select("*").eq("location_id", currentLocationId)
-        .not("completed_at", "is", null).order("completed_at", { ascending: false }).limit(200)
+        .not("completed_at", "is", null).gte("completed_at", historyCutoff)
+        .order("completed_at", { ascending: false }).limit(200)
     ]);
     if (openResult.error) throw openResult.error;
     if (doneResult.error) throw doneResult.error;
     openOrders = openResult.data || [];
     doneOrders = doneResult.data || [];
     renderOrders();
+  }
+
+  async function clearCompletedHistory() {
+    if (!doneOrders.length) return;
+    const confirmed = globalThis.confirm("Wirklich den gesamten erledigten Verlauf dieses Standorts endgültig löschen? Diese Aktion kann nicht rückgängig gemacht werden.");
+    if (!confirmed) return;
+    const button = $("#clearHistoryButton");
+    button.disabled = true;
+    try {
+      const { error } = await client.from("kds_orders").delete()
+        .eq("location_id", currentLocationId)
+        .not("completed_at", "is", null);
+      if (error) throw error;
+      doneOrders = [];
+      setMessage("Der erledigte Verlauf wurde gelöscht.");
+      renderOrders();
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function subscribeToOrders() {
@@ -156,7 +192,6 @@
     renderOrders();
     subscribeToOrders();
     await loadOrders();
-    $("#pagerInput").focus();
   }
 
   async function startKds(session) {
@@ -181,42 +216,22 @@
     refreshTimer = setInterval(() => loadOrders().catch(() => {}), 15000);
   }
 
-  async function completePager(event) {
-    event.preventDefault();
-    const input = $("#pagerInput");
-    const pagerNumber = globalThis.KdsOrder?.normalizePagerNumber(input.value);
-    if (!pagerNumber) return;
-    const matching = openOrders.filter((order) => String(order.pager_number) === pagerNumber);
-    if (!matching.length) {
-      setMessage(`Pager ${pagerNumber} ist nicht als offene Bestellung vorhanden.`, true);
-      input.select();
-      return;
-    }
-    const { error } = await client.from("kds_orders").update({
-      completed_at: new Date().toISOString(),
-      completed_by: currentUser.id
-    }).eq("location_id", currentLocationId).eq("pager_number", pagerNumber).is("completed_at", null);
-    if (error) {
-      setMessage(error.message || "Bestellung konnte nicht abgeschlossen werden.", true);
-      return;
-    }
-    input.value = "";
-    setMessage(`Pager ${pagerNumber} wurde erledigt.`);
-    await loadOrders();
-    input.focus();
-  }
-
   async function completeOrder(orderId) {
     const order = openOrders.find((entry) => String(entry.id) === String(orderId));
     if (!order) return;
-    const { error } = await client.from("kds_orders").update({
-      completed_at: new Date().toISOString(),
-      completed_by: currentUser.id
-    }).eq("location_id", currentLocationId).eq("id", order.id).is("completed_at", null);
-    if (error) throw error;
-    setMessage(order.pager_number ? `Pager ${order.pager_number} wurde erledigt.` : "Bestellung ohne Pager wurde erledigt.");
-    await loadOrders();
-    $("#pagerInput").focus();
+    const button = $$(".complete-order-button").find((entry) => entry.dataset.id === String(order.id));
+    if (button) button.disabled = true;
+    try {
+      const { error } = await client.from("kds_orders").update({
+        completed_at: new Date().toISOString(),
+        completed_by: currentUser.id
+      }).eq("location_id", currentLocationId).eq("id", order.id).is("completed_at", null);
+      if (error) throw error;
+      setMessage(order.pager_number ? `Pager ${order.pager_number} wurde erledigt.` : "Bestellung ohne Pager wurde erledigt.");
+      await loadOrders();
+    } finally {
+      if (button?.isConnected) button.disabled = false;
+    }
   }
 
   async function boot() {
@@ -270,9 +285,9 @@
       }
     }
   });
-  $("#completeForm").addEventListener("submit", (event) => completePager(event).catch((error) => setMessage(error.message, true)));
   $("#locationSelect").addEventListener("change", (event) => changeLocation(event.target.value).catch((error) => setMessage(error.message, true)));
   $("#refreshButton").addEventListener("click", () => loadOrders().catch((error) => setMessage(error.message, true)));
+  $("#clearHistoryButton").addEventListener("click", () => clearCompletedHistory().catch((error) => setMessage(error.message || "Verlauf konnte nicht gelöscht werden.", true)));
   $$(".view-tab").forEach((button) => button.addEventListener("click", () => {
     currentView = button.dataset.view;
     renderOrders();

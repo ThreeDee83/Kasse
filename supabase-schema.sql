@@ -738,6 +738,7 @@ drop policy if exists "admins delete sales" on public.sales;
 drop policy if exists "members read kds orders" on public.kds_orders;
 drop policy if exists "members insert kds orders" on public.kds_orders;
 drop policy if exists "members update kds orders" on public.kds_orders;
+drop policy if exists "members delete completed kds orders" on public.kds_orders;
 drop policy if exists "admins delete kds orders" on public.kds_orders;
 drop policy if exists "members read cash" on public.cash_balances;
 drop policy if exists "members insert cash" on public.cash_balances;
@@ -773,6 +774,7 @@ create policy "admins delete sales" on public.sales for delete using (is_locatio
 create policy "members read kds orders" on public.kds_orders for select using (is_location_member(location_id) or is_any_admin());
 create policy "members insert kds orders" on public.kds_orders for insert with check (is_location_member(location_id));
 create policy "members update kds orders" on public.kds_orders for update using (is_location_member(location_id)) with check (is_location_member(location_id));
+create policy "members delete completed kds orders" on public.kds_orders for delete using (completed_at is not null and is_location_member(location_id));
 create policy "admins delete kds orders" on public.kds_orders for delete using (is_any_admin());
 create policy "members read cash" on public.cash_balances for select using (is_location_member(location_id) or is_any_admin());
 create policy "members insert cash" on public.cash_balances for insert with check (is_location_member(location_id));

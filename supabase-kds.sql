@@ -38,6 +38,7 @@ alter table public.kds_orders replica identity full;
 drop policy if exists "members read kds orders" on public.kds_orders;
 drop policy if exists "members insert kds orders" on public.kds_orders;
 drop policy if exists "members update kds orders" on public.kds_orders;
+drop policy if exists "members delete completed kds orders" on public.kds_orders;
 drop policy if exists "admins delete kds orders" on public.kds_orders;
 
 create policy "members read kds orders"
@@ -52,6 +53,10 @@ create policy "members update kds orders"
 on public.kds_orders for update
 using (public.is_location_member(location_id))
 with check (public.is_location_member(location_id));
+
+create policy "members delete completed kds orders"
+on public.kds_orders for delete
+using (completed_at is not null and public.is_location_member(location_id));
 
 create policy "admins delete kds orders"
 on public.kds_orders for delete
