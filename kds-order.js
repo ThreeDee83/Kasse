@@ -9,6 +9,10 @@
     return normalizedName(value) === "speisen";
   }
 
+  function isKdsExcludedCategoryName(value) {
+    return normalizedName(value) === "bruch";
+  }
+
   function normalizePagerNumber(value) {
     const pagerNumber = String(value || "").trim();
     return /^\d{1,6}$/.test(pagerNumber) ? pagerNumber : "";
@@ -22,7 +26,11 @@
   }
 
   function isFoodProduct(product, products, categories) {
-    return Boolean(product) && foodProductNames(products, categories).has(normalizedName(product.name));
+    const categoriesById = new Map((categories || []).map((category) => [String(category.id), category]));
+    const selectedCategory = categoriesById.get(String(product?.categoryId));
+    return Boolean(product)
+      && !isKdsExcludedCategoryName(selectedCategory?.name)
+      && foodProductNames(products, categories).has(normalizedName(product.name));
   }
 
   function mergeFoodItems(items) {
@@ -40,10 +48,12 @@
 
   function foodItemsFromCart(cart, products, categories) {
     const productsById = new Map((products || []).map((product) => [String(product.id), product]));
+    const categoriesById = new Map((categories || []).map((category) => [String(category.id), category]));
     const foodNames = foodProductNames(products, categories);
     return mergeFoodItems((cart || []).flatMap((entry) => {
       const product = productsById.get(String(entry.productId));
-      if (!product || !foodNames.has(normalizedName(product.name))) return [];
+      const selectedCategory = categoriesById.get(String(product?.categoryId));
+      if (!product || isKdsExcludedCategoryName(selectedCategory?.name) || !foodNames.has(normalizedName(product.name))) return [];
       return [{
         productId: product.id,
         name: product.name,
@@ -55,7 +65,8 @@
   function foodItemsFromSale(sale, products, categories) {
     const foodNames = foodProductNames(products, categories);
     return mergeFoodItems((sale?.items || []).filter((item) =>
-      (item?.isKdsFood === true || isFoodCategoryName(item?.categoryName) || foodNames.has(normalizedName(item?.name)))
+      !isKdsExcludedCategoryName(item?.categoryName)
+      && (item?.isKdsFood === true || isFoodCategoryName(item?.categoryName) || foodNames.has(normalizedName(item?.name)))
       && !item?.canceled && item?.status !== "canceled"
     ).map((item) => ({
       productId: item.productId || null,
@@ -64,5 +75,5 @@
     })));
   }
 
-  global.KdsOrder = { isFoodCategoryName, normalizePagerNumber, isFoodProduct, foodItemsFromCart, foodItemsFromSale };
+  global.KdsOrder = { isFoodCategoryName, isKdsExcludedCategoryName, normalizePagerNumber, isFoodProduct, foodItemsFromCart, foodItemsFromSale };
 })(globalThis);

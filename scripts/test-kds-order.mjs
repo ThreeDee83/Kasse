@@ -6,16 +6,19 @@ await import(pathToFileURL(resolve("kds-order.js")));
 
 const categories = [
   { id: "food", name: "Speisen" },
-  { id: "drinks", name: "Getränke" }
+  { id: "drinks", name: "Getränke" },
+  { id: "breakage", name: "Bruch" }
 ];
 const products = [
   { id: "soup", name: "Suppe", categoryId: "food" },
   { id: "soup-special", name: " Suppe ", categoryId: "drinks" },
+  { id: "soup-breakage", name: "Suppe", categoryId: "breakage" },
   { id: "water", name: "Wasser", categoryId: "drinks" }
 ];
 const cart = [
   { productId: "soup", quantity: 2 },
   { productId: "soup-special", quantity: 1 },
+  { productId: "soup-breakage", quantity: 4 },
   { productId: "water", quantity: 1 }
 ];
 
@@ -23,10 +26,15 @@ assert.deepEqual(globalThis.KdsOrder.foodItemsFromCart(cart, products, categorie
   { productId: "soup", name: "Suppe", quantity: 3 }
 ]);
 assert.equal(globalThis.KdsOrder.isFoodProduct(products[1], products, categories), true);
+assert.equal(globalThis.KdsOrder.isFoodProduct(products[2], products, categories), false);
+assert.deepEqual(globalThis.KdsOrder.foodItemsFromCart([
+  { productId: "soup-breakage", quantity: 1 }
+], products, categories), []);
 assert.deepEqual(globalThis.KdsOrder.foodItemsFromSale({ items: [
   { productId: "soup", name: "Suppe", categoryName: "Speisen", quantity: 2 },
   { productId: "old", name: "Storniert", categoryName: "Speisen", quantity: 1, canceled: true },
   { productId: "soup-special", name: "Suppe", categoryName: "Getränke", isKdsFood: true, quantity: 1 },
+  { productId: "soup-breakage", name: "Suppe", categoryName: "Bruch", isKdsFood: true, quantity: 5 },
   { productId: "water", name: "Wasser", categoryName: "Getränke", quantity: 1 }
 ] }), [{ productId: "soup", name: "Suppe", quantity: 3 }]);
 assert.equal(globalThis.KdsOrder.normalizePagerNumber(" 24 "), "24");
