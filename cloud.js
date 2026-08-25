@@ -149,10 +149,17 @@
   }
 
   async function locations() {
-    const { data, error } = await client
+    let result = await client
       .from("user_locations")
       .select("role, location:locations(id,name,kds_enabled)")
       .order("created_at");
+    if (result.error && String(result.error.message || "").includes("kds_enabled")) {
+      result = await client
+        .from("user_locations")
+        .select("role, location:locations(id,name)")
+        .order("created_at");
+    }
+    const { data, error } = result;
     if (error) throw error;
     return (data || [])
       .filter((entry) => entry.location?.id)
@@ -160,10 +167,17 @@
   }
 
   async function adminLocations() {
-    const { data, error } = await client
+    let result = await client
       .from("locations")
       .select("id,name,kds_enabled,created_at")
       .order("created_at");
+    if (result.error && String(result.error.message || "").includes("kds_enabled")) {
+      result = await client
+        .from("locations")
+        .select("id,name,created_at")
+        .order("created_at");
+    }
+    const { data, error } = result;
     if (error) throw error;
     return (data || []).map((location) => ({
       id: location.id,

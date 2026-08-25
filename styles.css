@@ -52,6 +52,7 @@ body[data-theme="light"] .cart-footer { background: #fbfaf6; }
 .login-card input, .admin-card input, .admin-card select { width: 100%; margin-top: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; outline: 0; background: var(--panel-soft); color: var(--ink); }
 .login-card input:focus, .admin-card input:focus, .admin-card select:focus { border-color: var(--green); }
 .login-error { margin: 0 !important; color: var(--danger) !important; font-size: 12px; }
+.login-error.loading { color: var(--muted) !important; }
 .config-hint { color: var(--muted); line-height: 1.5; text-align: center; }
 
 .app-shell { min-height: 100vh; }

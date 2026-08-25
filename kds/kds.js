@@ -62,6 +62,16 @@
     output.classList.toggle("error", isError);
   }
 
+  function authErrorMessage(error) {
+    const message = String(error?.message || error || "").trim();
+    if (/invalid login credentials/i.test(message)) return "E-Mail-Adresse oder Passwort ist falsch.";
+    if (/email not confirmed/i.test(message)) return "Die E-Mail-Adresse wurde noch nicht bestätigt.";
+    if (/failed to fetch|networkerror|load failed|fetch failed/i.test(message)) {
+      return "Supabase ist nicht erreichbar. Bitte Internetverbindung und Konfiguration prüfen.";
+    }
+    return message || "Anmeldung fehlgeschlagen. Bitte erneut versuchen.";
+  }
+
   function renderOrders() {
     const orders = currentView === "open" ? openOrders : doneOrders;
     $("#openCount").textContent = openOrders.length;
@@ -222,20 +232,32 @@
 
   $("#loginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    $("#loginError").classList.add("hidden");
-    const { data, error } = await client.auth.signInWithPassword({
-      email: $("#loginEmail").value.trim(), password: $("#loginPassword").value
-    });
-    if (error) {
-      $("#loginError").textContent = error.message;
-      $("#loginError").classList.remove("hidden");
-      return;
+    const output = $("#loginError");
+    const button = event.submitter || event.currentTarget.querySelector('button[type="submit"]');
+    const originalButtonText = button?.textContent || "Anmelden";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Anmeldung läuft …";
     }
+    output.textContent = "Verbindung zu Supabase wird hergestellt …";
+    output.classList.add("loading");
+    output.classList.remove("hidden");
     try {
+      if (!client) throw new Error("Supabase ist noch nicht konfiguriert.");
+      const { data, error } = await client.auth.signInWithPassword({
+        email: $("#loginEmail").value.trim(), password: $("#loginPassword").value
+      });
+      if (error) throw error;
       await startKds(data.session);
     } catch (startError) {
-      $("#loginError").textContent = startError.message;
-      $("#loginError").classList.remove("hidden");
+      output.textContent = authErrorMessage(startError);
+      output.classList.remove("hidden");
+    } finally {
+      output.classList.remove("loading");
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalButtonText;
+      }
     }
   });
   $("#completeForm").addEventListener("submit", (event) => completePager(event).catch((error) => setMessage(error.message, true)));

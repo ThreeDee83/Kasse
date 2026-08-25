@@ -3777,6 +3777,17 @@ function showToast(message) {
   toastTimer = setTimeout(() => $("#toast").classList.remove("show"), 1800);
 }
 
+function authErrorMessage(error) {
+  const message = String(error?.message || error || "").trim();
+  if (/invalid login credentials/i.test(message)) return "E-Mail-Adresse oder Passwort ist falsch.";
+  if (/email not confirmed/i.test(message)) return "Die E-Mail-Adresse wurde noch nicht bestätigt.";
+  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(message)) {
+    return "Supabase ist nicht erreichbar. Bitte Internetverbindung und Supabase-Konfiguration prüfen.";
+  }
+  if (/kds_enabled/i.test(message)) return "Bitte die aktuelle supabase-kds.sql im Supabase SQL Editor ausführen.";
+  return message || "Anmeldung fehlgeschlagen. Bitte erneut versuchen.";
+}
+
 async function logout() {
   stopAdminReportAutoRefresh();
   clearInterval(automaticReportTimer);
@@ -4046,27 +4057,39 @@ $("#newOrderButton").addEventListener("click", () => {
 
 $("#loginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const errorOutput = $("#loginError");
   if (!CloudStore.configured) {
-    $("#loginError").textContent = "Supabase ist noch nicht konfiguriert.";
-    $("#loginError").classList.remove("hidden");
+    errorOutput.textContent = "Supabase ist noch nicht konfiguriert.";
+    errorOutput.classList.remove("hidden");
     return;
   }
-  const button = event.submitter;
-  button.disabled = true;
-  $("#loginError").classList.add("hidden");
-  const { error } = await CloudStore.signIn($("#loginEmail").value.trim(), $("#loginPassword").value);
-  if (error) {
-    $("#loginError").textContent = error.message;
-    $("#loginError").classList.remove("hidden");
-  } else {
+  const button = event.submitter || event.currentTarget.querySelector('button[type="submit"]');
+  const originalButtonText = button?.textContent || "Anmelden";
+  if (button) {
+    button.textContent = "Anmeldung läuft …";
+    button.disabled = true;
+  }
+  errorOutput.textContent = "Verbindung zu Supabase wird hergestellt …";
+  errorOutput.classList.add("loading");
+  errorOutput.classList.remove("hidden");
+  try {
+    const { error } = await CloudStore.signIn($("#loginEmail").value.trim(), $("#loginPassword").value);
+    if (error) throw error;
     try {
       await startCloudSession();
     } catch (sessionError) {
-      $("#loginError").textContent = sessionError.message || "Standorte konnten nicht geladen werden.";
-      $("#loginError").classList.remove("hidden");
+      throw new Error(authErrorMessage(sessionError));
+    }
+  } catch (error) {
+    errorOutput.textContent = authErrorMessage(error);
+    errorOutput.classList.remove("hidden");
+  } finally {
+    errorOutput.classList.remove("loading");
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalButtonText;
     }
   }
-  button.disabled = false;
 });
 $("#localModeButton").addEventListener("click", startLocalMode);
 

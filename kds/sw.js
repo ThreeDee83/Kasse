@@ -1,4 +1,4 @@
-const CACHE = "owncash-kds-v2";
+const CACHE = "owncash-kds-v3";
 const APP_SHELL = [
   "./", "./index.html", "./kds.css", "./kds.js", "./manifest.webmanifest",
   "../kds-order.js", "../config.js", "../vendor/supabase.js",
