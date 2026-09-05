@@ -54,6 +54,7 @@ let paymentWithoutPager = false;
 let logoutLongPressTimer = null;
 let logoutLongPressTriggered = false;
 let logoutLongPressResetTimer = null;
+let staffToolsAutoHideTimer = null;
 let combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
 let reportLocationScope = [];
 let toastTimer;
@@ -305,7 +306,7 @@ async function toggleKds() {
 
 function renderRoleAccess() {
   const isAdmin = isAdminUser();
-  const staffToolsVisible = isAdmin || localStorage.getItem(staffToolsVisibilityKey()) === "true";
+  const staffToolsVisible = isAdmin || areStaffToolsVisible();
   document.body.classList.toggle("staff-mode", !isAdmin);
   document.body.classList.toggle("admin-mode", isAdmin);
   document.body.classList.toggle("staff-tools-visible", !isAdmin && staffToolsVisible);
@@ -315,27 +316,64 @@ function renderRoleAccess() {
   $$(".open-settings").forEach((button) => button.classList.toggle("hidden", !isAdmin));
   $$(".admin-only").forEach((element) => element.classList.toggle("hidden", !isAdmin));
   $$(".staff-only").forEach((element) => element.classList.toggle("hidden", isAdmin));
-  $("#topLogoutButton").title = isAdmin ? "Abmelden" : "Abmelden · 2 Sekunden halten für Abrechnung und Arbeitszeit";
+  $("#topLogoutButton").title = isAdmin ? "Abmelden" : "Abmelden · 1,2 Sekunden halten für Abrechnung und Arbeitszeit";
   $("#topLogoutButton").setAttribute("aria-label", $("#topLogoutButton").title);
   if (!isAdmin && !$("#settingsView").classList.contains("hidden")) {
     $("#settingsView").classList.add("hidden");
     $("#posView").classList.remove("hidden");
   }
+  scheduleStaffToolsAutoHide();
 }
 
 function staffToolsVisibilityKey() {
   return `owncash-staff-tools-visible:${currentUserId || currentUserEmail || "staff"}`;
 }
 
+function staffToolsVisibleUntil() {
+  const value = Number(localStorage.getItem(staffToolsVisibilityKey()));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function areStaffToolsVisible() {
+  return staffToolsVisibleUntil() > Date.now();
+}
+
+function scheduleStaffToolsAutoHide() {
+  clearTimeout(staffToolsAutoHideTimer);
+  staffToolsAutoHideTimer = null;
+  if (isAdminUser()) return;
+  const remaining = staffToolsVisibleUntil() - Date.now();
+  if (remaining <= 0) {
+    localStorage.removeItem(staffToolsVisibilityKey());
+    return;
+  }
+  staffToolsAutoHideTimer = setTimeout(() => hideStaffTools(true), remaining);
+}
+
+function hideStaffTools(showMessage = false) {
+  localStorage.removeItem(staffToolsVisibilityKey());
+  clearTimeout(staffToolsAutoHideTimer);
+  staffToolsAutoHideTimer = null;
+  if (!$("#reportsView").classList.contains("hidden") || !$("#timeClockView").classList.contains("hidden")) {
+    closeSettings();
+  }
+  renderRoleAccess();
+  if (showMessage) showToast("Abrechnung und Arbeitszeit automatisch ausgeblendet");
+}
+
 function toggleStaffToolsVisibility() {
   if (isAdminUser()) return;
-  const visible = localStorage.getItem(staffToolsVisibilityKey()) !== "true";
-  localStorage.setItem(staffToolsVisibilityKey(), String(visible));
+  const visible = !areStaffToolsVisible();
+  if (visible) {
+    localStorage.setItem(staffToolsVisibilityKey(), String(Date.now() + 5 * 60 * 1000));
+  } else {
+    localStorage.removeItem(staffToolsVisibilityKey());
+  }
   if (!visible && (!$("#reportsView").classList.contains("hidden") || !$("#timeClockView").classList.contains("hidden"))) {
     closeSettings();
   }
   renderRoleAccess();
-  showToast(visible ? "Abrechnung und Arbeitszeit eingeblendet" : "Abrechnung und Arbeitszeit ausgeblendet");
+  showToast(visible ? "Abrechnung und Arbeitszeit für 5 Minuten eingeblendet" : "Abrechnung und Arbeitszeit ausgeblendet");
 }
 
 function beginLogoutLongPress(event) {
@@ -353,7 +391,7 @@ function beginLogoutLongPress(event) {
     logoutLongPressResetTimer = setTimeout(() => {
       logoutLongPressTriggered = false;
     }, 1000);
-  }, 2000);
+  }, 1200);
 }
 
 function endLogoutLongPress() {
@@ -3849,6 +3887,9 @@ function authErrorMessage(error) {
 async function logout() {
   stopAdminReportAutoRefresh();
   clearInterval(automaticReportTimer);
+  clearTimeout(staffToolsAutoHideTimer);
+  staffToolsAutoHideTimer = null;
+  localStorage.removeItem(staffToolsVisibilityKey());
   try {
     if (!localMode) await CloudStore.signOut();
   } catch (_) {}

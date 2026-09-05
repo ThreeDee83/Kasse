@@ -23,6 +23,12 @@ for (const source of appShell) {
 }
 assert.match(serviceWorker, /ignoreSearch:\s*true/, "Versionierte Assets müssen ohne Query-String aus dem Cache geladen werden");
 
+const appSource = await readFile("app.js", "utf8");
+assert.match(appSource, /staffToolsVisibilityKey/, "Die User-Sichtbarkeit für Abrechnung und Arbeitszeit fehlt");
+assert.match(appSource, /logoutLongPressTimer[\s\S]*1200/, "Der 1,2-sekündige Longpress auf Abmelden fehlt");
+assert.match(appSource, /5 \* 60 \* 1000/, "Das automatische Ausblenden nach fünf Minuten fehlt");
+assert.match(appSource, /reportsButton[\s\S]*timeClockButton/, "Abrechnung und Arbeitszeit müssen gemeinsam geschaltet werden");
+
 const bcryptSource = await readFile("vendor/bcrypt.min.js", "utf8");
 const browserContext = { dcodeIO: {}, self: { crypto: webcrypto }, setTimeout, clearTimeout };
 vm.runInNewContext(bcryptSource, browserContext);
