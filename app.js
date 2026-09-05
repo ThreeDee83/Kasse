@@ -62,7 +62,6 @@ let cloudSaveTimer;
 let realtimeReloadTimer;
 let timeReloadTimer;
 let adminReportRefreshTimer;
-let automaticReportTimer;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -250,7 +249,6 @@ async function startOfflineSession(session = null) {
   selectInitialCategory();
   renderAll();
   renderTimeTracking();
-  startAutomaticReportSubmission();
   showToast("Offline gestartet – lokaler Datenstand");
   return true;
 }
@@ -566,7 +564,6 @@ async function switchLocation(locationId, background = false) {
   selectInitialCategory();
   renderAll();
   if (!$("#timeClockView").classList.contains("hidden")) await reloadTimeTracking();
-  if (!background) startAutomaticReportSubmission();
 }
 
 async function startCloudSession() {
@@ -610,7 +607,6 @@ async function startCloudSession() {
   await switchLocation(preferred);
   await reloadTimeTracking();
   CloudStore.flushQueue();
-  startAutomaticReportSubmission();
   return true;
 }
 
@@ -634,7 +630,6 @@ function startLocalMode() {
   loadLocalLocation(currentLocationId);
   selectInitialCategory();
   showApplication();
-  startAutomaticReportSubmission();
 }
 
 function visibleCategories() {
@@ -1784,7 +1779,7 @@ function submittedReportType(report) {
   return report.report_type || report.reportType || "daily";
 }
 
-async function transmitReport({ dateKey, reportType = "daily", automatic = false, locationId = currentLocationId, silent = false }) {
+async function transmitReport({ dateKey, reportType = "daily", locationId = currentLocationId, silent = false }) {
   let sourceSales = sales;
   let sourceCashBalances = cashBalances;
   let sourceCatalog = data;
@@ -1808,7 +1803,7 @@ async function transmitReport({ dateKey, reportType = "daily", automatic = false
   }
   const reportSales = reportType === "total" ? [...sourceSales] : salesForBusinessDate(sourceSales, dateKey);
   if (!reportSales.length) {
-    if (!automatic && !silent) showToast("Für diesen Zeitraum sind keine Bons vorhanden");
+    if (!silent) showToast("Für diesen Zeitraum sind keine Bons vorhanden");
     return false;
   }
   const cashBalance = reportType === "total"
@@ -1839,7 +1834,7 @@ async function transmitReport({ dateKey, reportType = "daily", automatic = false
   } else {
     await CloudStore.submitReport(locationId, dateKey, reportSales, sourceCatalog, cashBalance, reportType);
   }
-  if (!automatic && !silent) {
+  if (!silent) {
     const action = isAdminUser() ? "angefordert und aktualisiert" : "übermittelt";
     showToast(reportType === "total"
       ? `Gesamtabrechnung wurde ${action}`
@@ -1917,27 +1912,6 @@ async function submitSelectedReport(event) {
     button.disabled = false;
     button.textContent = originalText;
   }
-}
-
-async function submitCompletedBusinessDayAutomatically() {
-  if (isAdminUser() || !currentLocationId || currentLocationId === "local" && !localMode) return;
-  const completedDate = previousDateKey(businessDateKey(new Date()));
-  const markerKey = `kassenraum-auto-report:${currentLocationId}`;
-  if (localStorage.getItem(markerKey) === completedDate) return;
-  try {
-    const sent = await transmitReport({ dateKey: completedDate, automatic: true });
-    if (sent) {
-      localStorage.setItem(markerKey, completedDate);
-      showToast(`Tagesabrechnung ${formatDateKey(completedDate)} automatisch übermittelt`);
-    }
-  } catch (_) {}
-}
-
-function startAutomaticReportSubmission() {
-  clearInterval(automaticReportTimer);
-  if (isAdminUser()) return;
-  submitCompletedBusinessDayAutomatically();
-  automaticReportTimer = setInterval(submitCompletedBusinessDayAutomatically, 60 * 1000);
 }
 
 async function deleteSubmittedReport(reportId) {
@@ -3886,7 +3860,6 @@ function authErrorMessage(error) {
 
 async function logout() {
   stopAdminReportAutoRefresh();
-  clearInterval(automaticReportTimer);
   clearTimeout(staffToolsAutoHideTimer);
   staffToolsAutoHideTimer = null;
   localStorage.removeItem(staffToolsVisibilityKey());

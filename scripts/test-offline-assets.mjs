@@ -27,6 +27,7 @@ const appSource = await readFile("app.js", "utf8");
 assert.match(appSource, /staffToolsVisibilityKey/, "Die User-Sichtbarkeit für Abrechnung und Arbeitszeit fehlt");
 assert.match(appSource, /logoutLongPressTimer[\s\S]*1200/, "Der 1,2-sekündige Longpress auf Abmelden fehlt");
 assert.match(appSource, /5 \* 60 \* 1000/, "Das automatische Ausblenden nach fünf Minuten fehlt");
+assert.doesNotMatch(appSource, /startAutomaticReportSubmission|submitCompletedBusinessDayAutomatically|kassenraum-auto-report/, "Abrechnungen dürfen nicht automatisch übermittelt werden");
 assert.match(appSource, /reportsButton[\s\S]*timeClockButton/, "Abrechnung und Arbeitszeit müssen gemeinsam geschaltet werden");
 
 const bcryptSource = await readFile("vendor/bcrypt.min.js", "utf8");
