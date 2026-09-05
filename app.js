@@ -585,7 +585,7 @@ function renderCategories() {
 }
 
 function categoryButton(id, name, color, count) {
-  return `<button class="category-button ${selectedCategory === id ? "active" : ""}" data-id="${id}">
+  return `<button class="category-button ${selectedCategory === id ? "active" : ""}" data-id="${id}" style="--category-color:${color}">
     <span class="category-dot" style="background:${color}"></span>
     <span>${escapeHtml(name)}</span><span class="count">${count}</span>
   </button>`;
