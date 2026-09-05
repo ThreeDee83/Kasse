@@ -85,7 +85,11 @@ body[data-theme="light"] .cart-footer { background: #fbfaf6; }
 .icon-button { width: 41px; height: 41px; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--line); background: var(--white); cursor: pointer; transition: .2s; }
 .icon-button:hover { background: var(--green); border-color: var(--green); color: #07130f; transform: rotate(12deg); }
 .icon-button svg { width: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.logout-topbar { position: relative; overflow: hidden; user-select: none; -webkit-user-select: none; }
 .logout-topbar:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 18%, var(--white)); color: var(--danger); transform: none; }
+.logout-topbar svg { position: relative; z-index: 1; }
+.logout-topbar.is-long-pressing::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--green) 34%, transparent); transform-origin: bottom; animation: logout-long-press-progress 2s linear forwards; pointer-events: none; }
+@keyframes logout-long-press-progress { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 
 .active-employees-bar { min-height: 44px; padding: 7px 24px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--green) 8%, var(--panel)); }
 .active-employees-bar > strong { flex: 0 0 auto; color: var(--green); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }

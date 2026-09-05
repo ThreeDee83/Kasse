@@ -51,6 +51,9 @@ let receiptLocationFilter = "all";
 let pendingPaymentTotal = 0;
 let paymentReturnCategory = null;
 let paymentWithoutPager = false;
+let logoutLongPressTimer = null;
+let logoutLongPressTriggered = false;
+let logoutLongPressResetTimer = null;
 let combinedReportScope = { key: "", sales: [], cashBalances: {}, locationName: "Alle Standorte" };
 let reportLocationScope = [];
 let toastTimer;
@@ -302,16 +305,71 @@ async function toggleKds() {
 
 function renderRoleAccess() {
   const isAdmin = isAdminUser();
+  const staffToolsVisible = isAdmin || localStorage.getItem(staffToolsVisibilityKey()) === "true";
   document.body.classList.toggle("staff-mode", !isAdmin);
   document.body.classList.toggle("admin-mode", isAdmin);
+  document.body.classList.toggle("staff-tools-visible", !isAdmin && staffToolsVisible);
   $("#settingsButton").classList.toggle("hidden", !isAdmin);
+  $("#reportsButton").classList.toggle("hidden", !staffToolsVisible);
+  $("#timeClockButton").classList.toggle("hidden", !staffToolsVisible);
   $$(".open-settings").forEach((button) => button.classList.toggle("hidden", !isAdmin));
   $$(".admin-only").forEach((element) => element.classList.toggle("hidden", !isAdmin));
   $$(".staff-only").forEach((element) => element.classList.toggle("hidden", isAdmin));
+  $("#topLogoutButton").title = isAdmin ? "Abmelden" : "Abmelden · 2 Sekunden halten für Abrechnung und Arbeitszeit";
+  $("#topLogoutButton").setAttribute("aria-label", $("#topLogoutButton").title);
   if (!isAdmin && !$("#settingsView").classList.contains("hidden")) {
     $("#settingsView").classList.add("hidden");
     $("#posView").classList.remove("hidden");
   }
+}
+
+function staffToolsVisibilityKey() {
+  return `owncash-staff-tools-visible:${currentUserId || currentUserEmail || "staff"}`;
+}
+
+function toggleStaffToolsVisibility() {
+  if (isAdminUser()) return;
+  const visible = localStorage.getItem(staffToolsVisibilityKey()) !== "true";
+  localStorage.setItem(staffToolsVisibilityKey(), String(visible));
+  if (!visible && (!$("#reportsView").classList.contains("hidden") || !$("#timeClockView").classList.contains("hidden"))) {
+    closeSettings();
+  }
+  renderRoleAccess();
+  showToast(visible ? "Abrechnung und Arbeitszeit eingeblendet" : "Abrechnung und Arbeitszeit ausgeblendet");
+}
+
+function beginLogoutLongPress(event) {
+  if (isAdminUser() || (event.pointerType === "mouse" && event.button !== 0)) return;
+  clearTimeout(logoutLongPressTimer);
+  clearTimeout(logoutLongPressResetTimer);
+  logoutLongPressTriggered = false;
+  $("#topLogoutButton").classList.add("is-long-pressing");
+  logoutLongPressTimer = setTimeout(() => {
+    logoutLongPressTimer = null;
+    logoutLongPressTriggered = true;
+    $("#topLogoutButton").classList.remove("is-long-pressing");
+    if (navigator.vibrate) navigator.vibrate(40);
+    toggleStaffToolsVisibility();
+    logoutLongPressResetTimer = setTimeout(() => {
+      logoutLongPressTriggered = false;
+    }, 1000);
+  }, 2000);
+}
+
+function endLogoutLongPress() {
+  clearTimeout(logoutLongPressTimer);
+  logoutLongPressTimer = null;
+  $("#topLogoutButton").classList.remove("is-long-pressing");
+}
+
+function handleTopLogoutClick(event) {
+  if (logoutLongPressTriggered) {
+    event.preventDefault();
+    logoutLongPressTriggered = false;
+    clearTimeout(logoutLongPressResetTimer);
+    return;
+  }
+  logout();
 }
 
 function applyTheme() {
@@ -4008,7 +4066,14 @@ $("#copyKdsLinkButton").addEventListener("click", async () => {
 $("#deleteSalesButton").addEventListener("click", deleteRevenueData);
 $("#resetTimeTrackingButton").addEventListener("click", resetTimeTrackingData);
 $("#logoutButton").addEventListener("click", logout);
-$("#topLogoutButton").addEventListener("click", logout);
+$("#topLogoutButton").addEventListener("pointerdown", beginLogoutLongPress);
+$("#topLogoutButton").addEventListener("pointerup", endLogoutLongPress);
+$("#topLogoutButton").addEventListener("pointercancel", endLogoutLongPress);
+$("#topLogoutButton").addEventListener("pointerleave", endLogoutLongPress);
+$("#topLogoutButton").addEventListener("contextmenu", (event) => {
+  if (!isAdminUser()) event.preventDefault();
+});
+$("#topLogoutButton").addEventListener("click", handleTopLogoutClick);
 $("#editorForm").addEventListener("submit", saveEditor);
 $("#dialogClose").addEventListener("click", () => $("#editorDialog").close());
 $("#dialogCancel").addEventListener("click", () => $("#editorDialog").close());
