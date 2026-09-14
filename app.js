@@ -143,40 +143,6 @@ function isAdminUser() {
 }
 
 function canonicalLocationName(name) {
-  const normalized = String(name || "")
-    .trim()
-    .toLocaleLowerCase("de")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  if (!normalized || normalized === "undefined" || normalized === "null" || normalized === "hauptstandort") return null;
-  if (normalized.includes("punsch")) return "Punschhütte";
-  if (normalized === "bar" || normalized.includes("bar ")) return "Bar";
-  return null;
-}
-
-function normalizeLocationList(list) {
-  const prepared = [];
-  const seen = new Set();
-  (list || []).forEach((location) => {
-    if (!location?.id) return;
-    const rawName = String(location.name ?? "").trim();
-    const canonicalName = canonicalLocationName(rawName);
-    if (!canonicalName) return;
-    const dedupeKey = canonicalName.toLocaleLowerCase("de");
-    if (seen.has(dedupeKey)) return;
-    prepared.push({
-      ...location,
-      name: canonicalName,
-      role: location.role || "staff"
-    });
-    seen.add(dedupeKey);
-  });
-  return STANDARD_LOCATION_NAMES
-    .map((name) => prepared.find((location) => location.name === name))
-    .filter(Boolean);
-}
-
-function canonicalLocationName(name) {
   const rawName = String(name || "").trim();
   const normalized = rawName
     .toLocaleLowerCase("de")
@@ -1072,74 +1038,10 @@ function aggregateSales(entries) {
   };
 }
 
-function renderReceiptHistory(reportSales) {
-  const sortedSales = [...reportSales].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  $("#receiptHistoryCount").textContent = `${sortedSales.length} ${sortedSales.length === 1 ? "Bon" : "Bons"}`;
-  $("#receiptHistoryBody").innerHTML = sortedSales.map((sale) => {
-    const items = (sale.items || []).map((item) =>
-      `${escapeHtml(item.name)} <small>${Number(item.quantity || 0)} × ${euro(Number(item.price || 0))}${item.categoryName ? ` · ${escapeHtml(item.categoryName)}` : ""}</small>`
-    ).join("");
-    return `<tr class="receipt-history-row" data-sale-id="${escapeHtml(sale.id || "")}" tabindex="0" role="button" aria-label="Bon anzeigen">
-      <td><strong>${escapeHtml(formatDateTime(sale.timestamp))}</strong><small>${escapeHtml(sale.id || "")}</small></td>
-      <td>${escapeHtml(sale.locationName || locations.find((location) => location.id === currentLocationId)?.name || "Standort")}</td>
-      <td class="receipt-items">${items}</td>
-      <td class="number"><strong>${euro(saleActiveTotal(sale))}</strong></td>
-    </tr>`;
-  }).join("");
-  $$(".receipt-history-row").forEach((row) => {
-    row.addEventListener("click", () => openReceiptDialog(row.dataset.saleId));
-    row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        openReceiptDialog(row.dataset.saleId);
-      }
-    });
-  });
-  $("#emptyReceiptHistory").classList.toggle("hidden", sortedSales.length > 0);
-  $(".receipt-history-card .report-table-scroll").classList.toggle("hidden", sortedSales.length === 0);
-}
-
 function saleLocationName(sale) {
   return sale?.locationName || locations.find((location) => location.id === (sale?.locationId || currentLocationId))?.name || "Standort";
 }
 
-function findSaleForReceipt(saleId) {
-  return reportSourceSales().find((sale) => String(sale.id || "") === String(saleId || ""));
-}
-
-async function persistCorrectedSale(sale) {
-  const localIndex = sales.findIndex((entry) => String(entry.id || "") === String(sale.id || ""));
-  if (!sale.items?.length) {
-    if (localIndex >= 0) sales.splice(localIndex, 1);
-    if (!localMode) await CloudStore.deleteSale(sale.id);
-  } else {
-    sale.total = sale.items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
-    if (localIndex >= 0) sales[localIndex] = sale;
-    if (!localMode) await CloudStore.saveSale(sale.locationId || currentLocationId, sale);
-  }
-  persistSales();
-  await refreshReportScope(true);
-  renderReport();
-}
-
-async function removeReceiptPosition(saleId, itemIndex) {
-  const sale = findSaleForReceipt(saleId);
-  if (!sale || !sale.items?.[itemIndex]) {
-    showToast("Position wurde nicht gefunden");
-    return;
-  }
-  const item = sale.items[itemIndex];
-  if (!confirm(`Position „${item.name}“ aus diesem Bon löschen?`)) return;
-  try {
-    sale.items.splice(itemIndex, 1);
-    await persistCorrectedSale(sale);
-    if (sale.items.length) openReceiptDialog(sale.id);
-    else $("#receiptDialog").close();
-    showToast("Bonposition wurde gelöscht");
-  } catch (error) {
-    showToast(error.message || "Bonposition konnte nicht gelöscht werden");
-  }
-}
 
 async function deleteReceipt(saleId) {
   if (!isAdminUser()) return;
@@ -1165,44 +1067,6 @@ async function deleteReceipt(saleId) {
   } catch (error) {
     showToast(error.message || "Bon konnte nicht gelöscht werden");
   }
-}
-
-function openReceiptDialog(saleId) {
-  const sale = findSaleForReceipt(saleId);
-  if (!sale) {
-    showToast("Bon wurde nicht gefunden");
-    return;
-  }
-  const rows = (sale.items || []).map((item, index) => {
-    const quantity = Number(item.quantity || 0);
-    const price = Number(item.price || 0);
-    return `<tr>
-      <td><strong>${escapeHtml(item.name || "")}</strong><small>${escapeHtml(item.categoryName || "Ohne Kategorie")}</small></td>
-      <td class="number">${quantity}</td>
-      <td class="number">${euro(price)}</td>
-      <td class="number"><strong>${euro(quantity * price)}</strong></td>
-      <td class="number"><button class="receipt-minus-button" data-sale-id="${escapeHtml(sale.id || "")}" data-item-index="${index}" title="Position löschen">−</button></td>
-    </tr>`;
-  }).join("");
-  $("#receiptDialogTitle").textContent = `Bon ${formatDateTime(sale.timestamp)}`;
-  $("#receiptDialogContent").innerHTML = `
-    <div class="receipt-detail-meta">
-      <span><strong>Standort</strong>${escapeHtml(saleLocationName(sale))}</span>
-      <span><strong>Bon-ID</strong>${escapeHtml(sale.id || "")}</span>
-      <span><strong>Summe</strong>${euro(saleActiveTotal(sale))}</span>
-    </div>
-    ${isAdminUser() ? `<div class="receipt-admin-actions"><button class="danger-button" id="deleteReceiptButton" type="button" data-sale-id="${escapeHtml(sale.id || "")}">Bon löschen</button></div>` : ""}
-    <div class="report-table-scroll">
-      <table class="report-table receipt-detail-table">
-        <thead><tr><th>Artikel</th><th class="number">Anzahl</th><th class="number">Preis</th><th class="number">Summe</th><th></th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-  $$(".receipt-minus-button").forEach((button) => button.addEventListener("click", () =>
-    removeReceiptPosition(button.dataset.saleId, Number(button.dataset.itemIndex))
-  ));
-  $("#deleteReceiptButton")?.addEventListener("click", (event) => deleteReceipt(event.currentTarget.dataset.saleId));
-  $("#receiptDialog").showModal();
 }
 
 function renderReceiptLocationFilter() {
@@ -1976,15 +1840,6 @@ async function exportReport() {
   showToast("Excel-Abrechnung wurde erstellt");
 }
 
-function bytesToBase64(bytes) {
-  const array = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let index = 0; index < array.length; index += chunkSize) {
-    binary += String.fromCharCode(...array.subarray(index, index + chunkSize));
-  }
-  return btoa(binary);
-}
 
 function textToBase64(text) {
   return bytesToBase64(new TextEncoder().encode(text));
@@ -2417,7 +2272,13 @@ function cacheServerOfflinePinHashes(rows) {
 }
 
 function bytesToBase64(bytes) {
-  return btoa(String.fromCharCode(...bytes));
+  const array = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < array.length; index += chunkSize) {
+    binary += String.fromCharCode(...array.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function base64ToBytes(value) {
@@ -3347,51 +3208,6 @@ function deleteProduct(id) {
   showToast("Artikel gelöscht");
 }
 
-async function importExcelFile(file) {
-  if (!globalThis.XLSX) throw new Error("Excel-Bibliothek ist offline noch nicht verfügbar.");
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
-  if (matrix.length < 2 || matrix[0].length < 2) throw new Error("Die Excelmatrix enthält keine Kategorien oder Artikel.");
-  const importedCategories = matrix[0].slice(1).map((name, index) => ({
-    id: uid("cat"),
-    name: String(name).trim(),
-    color: COLORS[index % COLORS.length],
-    hidden: false
-  })).filter((category) => category.name);
-  const importedProducts = [];
-  matrix.slice(1).forEach((row) => {
-    const name = String(row[0] || "").trim();
-    if (!name) return;
-    importedCategories.forEach((category, index) => {
-      const rawPrice = row[index + 1];
-      if (rawPrice === "" || rawPrice === null || rawPrice === undefined) return;
-      const price = Number(String(rawPrice).replace(",", "."));
-      if (!Number.isFinite(price) || price < 0) return;
-      importedProducts.push({ id: uid("product"), name, price, categoryId: category.id });
-    });
-  });
-  if (!importedProducts.length) throw new Error("Keine gültigen Preise gefunden.");
-  if (!confirm(`${importedCategories.length} Kategorien und ${importedProducts.length} Artikel importieren? Das Sortiment wird an allen Standorten ersetzt.`)) return;
-  data = { categories: importedCategories, products: importedProducts };
-  clearTimeout(cloudSaveTimer);
-  if (localMode) {
-    locations.forEach((location) => {
-      const key = location.id === "local" ? "kassenraum-data" : `kassenraum-data:${location.id}`;
-      localStorage.setItem(key, JSON.stringify(data));
-    });
-    renderAll();
-    showToast(`Excel-Sortiment wurde für alle ${locations.length} Standorte übernommen`);
-  } else {
-    const locationIds = locations.filter((location) => location.role === "admin").map((location) => location.id);
-    const result = await CloudStore.saveCatalogToLocations(locationIds, data);
-    localStorage.setItem(scopedKey("kassenraum-data"), JSON.stringify(data));
-    renderAll();
-    showToast(result?.queued
-      ? "Excel-Sortiment gespeichert – alle Standorte werden nach Verbindung synchronisiert"
-      : `Excel-Sortiment wurde für alle Benutzer an ${locationIds.length} Standorten übernommen`);
-  }
-}
 
 function selectedAdminExcelSections() {
   return {
@@ -3781,16 +3597,6 @@ async function deleteLocation(locationId) {
   }
 }
 
-async function deleteRevenueData() {
-  if (!confirm("Alle Umsatzdaten und Kassenstände dieses Standorts unwiderruflich löschen?")) return;
-  if (!localMode) await CloudStore.deleteSales(currentLocationId);
-  sales = [];
-  cashBalances = {};
-  persistSales();
-  persistCashBalances();
-  renderReport();
-  showToast("Umsatzdaten wurden gelöscht");
-}
 
 async function resetTimeTrackingData() {
   if (!isAdminUser()) return;
@@ -3807,38 +3613,6 @@ async function resetTimeTrackingData() {
   }
 }
 
-async function deleteRevenueData() {
-  if (!isAdminUser()) return;
-  if (!sales.length && !Object.keys(cashBalances).length) {
-    showToast("Keine Umsatzdaten für ein Backup vorhanden");
-    return;
-  }
-  if (!confirm("Vor dem Löschen muss ein Umsatzbackup erstellt werden. Sämtliche Umsatzdaten jetzt downloaden?")) return;
-  try {
-    downloadRevenueBackup();
-  } catch (error) {
-    showToast(error.message || "Umsatzbackup konnte nicht erstellt werden");
-    return;
-  }
-  if (!confirm("Backup wurde zum Download angeboten. Umsatzdaten und Kassenstände dieses Standorts jetzt unwiderruflich löschen?")) return;
-  try {
-    if (!localMode) await CloudStore.deleteSales(currentLocationId);
-    else {
-      submittedReports = readStoredJson("kassenraum-submitted-reports", [])
-        .filter((report) => String(report.locationId) !== String(currentLocationId));
-      localStorage.setItem("kassenraum-submitted-reports", JSON.stringify(submittedReports));
-    }
-    sales = [];
-    cashBalances = {};
-    persistSales();
-    persistCashBalances();
-    await refreshReportScope(true);
-    renderReport();
-    showToast("Umsatzdaten wurden gelöscht");
-  } catch (error) {
-    showToast(error.message || "Umsatzdaten konnten nicht gelöscht werden");
-  }
-}
 
 function showToast(message) {
   clearTimeout(toastTimer);
